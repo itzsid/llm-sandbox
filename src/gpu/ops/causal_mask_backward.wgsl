@@ -1,6 +1,6 @@
-// Apply causal mask: set upper triangle to -infinity
-// Supports 2D [T, T] and 3D [B, T, T] (batchSize slices of T*T)
-@group(0) @binding(0) var<storage, read> input: array<f32>;
+// Causal mask backward: zero gradient where mask was applied (col > row), pass through elsewhere
+// Works for both 2D [T, T] and 3D [B, T, T] (flattened, rows/cols define the T*T slice)
+@group(0) @binding(0) var<storage, read> grad: array<f32>;
 @group(0) @binding(1) var<storage, read_write> result: array<f32>;
 
 struct Params {
@@ -20,8 +20,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let col = posInSlice % params.T;
 
   if (col > row) {
-    result[idx] = -3.402823e+38; // -FLT_MAX as -inf proxy
+    result[idx] = 0.0;
   } else {
-    result[idx] = input[idx];
+    result[idx] = grad[idx];
   }
 }

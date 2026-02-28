@@ -5,10 +5,15 @@ import { recordOp, isGradEnabled } from './autograd'
 import elementwiseBinaryShader from './ops/elementwise_binary.wgsl'
 import elementwiseUnaryShader from './ops/elementwise_unary.wgsl'
 import matmulShader from './ops/matmul.wgsl'
+import batchedMatmulShader from './ops/batched_matmul.wgsl'
+import batchedTransposeShader from './ops/batched_transpose.wgsl'
+import reshapeHeadsShader from './ops/reshape_heads.wgsl'
 import softmaxShader from './ops/softmax.wgsl'
+import softmaxBackwardShader from './ops/softmax_backward.wgsl'
 import layernormShader from './ops/layernorm.wgsl'
 import embeddingShader from './ops/embedding.wgsl'
 import causalMaskShader from './ops/causal_mask.wgsl'
+import causalMaskBackwardShader from './ops/causal_mask_backward.wgsl'
 import crossentropyShader from './ops/crossentropy.wgsl'
 import transposeShader from './ops/transpose.wgsl'
 import reduceShader from './ops/reduce.wgsl'
@@ -268,7 +273,21 @@ export async function neg(x: Tensor): Promise<Tensor> {
 }
 
 export async function scalarMul(x: Tensor, s: number): Promise<Tensor> {
-  return elementwiseUnary(x, 5, s)
+  const result = await elementwiseUnary(x, 5, s)
+  if (isGradEnabled() && x.requiresGrad) {
+    recordOp(result, [x], async (grad) => {
+      const dX = await scalarMul(grad, s)
+      if (x.grad) {
+        const newGrad = await add(x.grad, dX)
+        x.grad.dispose()
+        dX.dispose()
+        x.grad = newGrad
+      } else {
+        x.grad = dX
+      }
+    })
+  }
+  return result
 }
 
 // --- Copy ---
@@ -341,9 +360,12 @@ export async function matmul(a: Tensor, b: Tensor): Promise<Tensor> {
 
 // --- Softmax ---
 export async function softmax(input: Tensor): Promise<Tensor> {
-  // input: [rows, cols], softmax along last dim
-  if (input.shape.length !== 2) throw new Error('softmax expects 2D tensor')
-  const rows = input.shape[0], cols = input.shape[1]
+  // input: [rows, cols] or [B, rows, cols], softmax along last dim
+  if (input.shape.length !== 2 && input.shape.length !== 3) {
+    throw new Error('softmax expects 2D or 3D tensor')
+  }
+  const cols = input.shape[input.shape.length - 1]
+  const rows = input.size / cols  // flatten leading dims
   const device = await getGPUDevice()
   const result = await Tensor.empty(input.shape)
   const pipeline = await getPipeline(device, softmaxShader, 'main')
@@ -356,6 +378,12 @@ export async function softmax(input: Tensor): Promise<Tensor> {
   })
   await device.queue.onSubmittedWorkDone()
   uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      await softmaxBackward(result, grad, input)
+    })
+  }
   return result
 }
 
@@ -425,21 +453,30 @@ export async function embedding(table: Tensor, indices: Tensor): Promise<Tensor>
 
 // --- Causal Mask ---
 export async function causalMask(input: Tensor): Promise<Tensor> {
-  // input: [rows, cols] - typically attention scores [T, T]
-  if (input.shape.length !== 2) throw new Error('causalMask expects 2D tensor')
-  const rows = input.shape[0], cols = input.shape[1]
+  // input: [T, T] or [B, T, T] - attention scores
+  if (input.shape.length !== 2 && input.shape.length !== 3) {
+    throw new Error('causalMask expects 2D or 3D tensor')
+  }
+  const T = input.shape[input.shape.length - 1]
+  const totalSlices = input.size / (T * T)
   const device = await getGPUDevice()
   const result = await Tensor.empty(input.shape)
   const pipeline = await getPipeline(device, causalMaskShader, 'main')
-  const uniform = createUniformBuffer(device, packU32(rows, cols))
+  const uniform = createUniformBuffer(device, packU32(totalSlices, T))
   dispatch(device, {
     pipeline,
     buffers: [input.buffer, result.buffer],
     uniformBuffer: uniform,
-    workgroups: [Math.ceil((rows * cols) / 256)],
+    workgroups: [Math.ceil(input.size / 256)],
   })
   await device.queue.onSubmittedWorkDone()
   uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      await causalMaskBackward(grad, T, totalSlices, input)
+    })
+  }
   return result
 }
 
@@ -515,6 +552,238 @@ export async function transpose(input: Tensor): Promise<Tensor> {
   return result
 }
 
+// --- Batched Matmul ---
+export async function batchedMatmul(a: Tensor, b: Tensor): Promise<Tensor> {
+  // a: [B, M, K], b: [B, K, N] -> result: [B, M, N]
+  if (a.shape.length !== 3 || b.shape.length !== 3) {
+    throw new Error('batchedMatmul expects 3D tensors')
+  }
+  const B = a.shape[0], M = a.shape[1], K = a.shape[2], N = b.shape[2]
+  if (a.shape[0] !== b.shape[0] || K !== b.shape[1]) {
+    throw new Error(`batchedMatmul shape mismatch: [${a.shape}] @ [${b.shape}]`)
+  }
+  const device = await getGPUDevice()
+  const result = await Tensor.empty([B, M, N])
+  const pipeline = await getPipeline(device, batchedMatmulShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(B, M, N, K))
+  dispatch(device, {
+    pipeline,
+    buffers: [a.buffer, b.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [Math.ceil(N / 16), Math.ceil(M / 16), B],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (isGradEnabled() && (a.requiresGrad || b.requiresGrad)) {
+    recordOp(result, [a, b], async (grad) => {
+      // dA = grad @ batchedTranspose(B), dB = batchedTranspose(A) @ grad
+      if (a.requiresGrad) {
+        const bT = await batchedTranspose(b)
+        const dA = await batchedMatmul(grad, bT)
+        bT.dispose()
+        if (a.grad) {
+          const newGrad = await add(a.grad, dA)
+          a.grad.dispose()
+          dA.dispose()
+          a.grad = newGrad
+        } else {
+          a.grad = dA
+        }
+      }
+      if (b.requiresGrad) {
+        const aT = await batchedTranspose(a)
+        const dB = await batchedMatmul(aT, grad)
+        aT.dispose()
+        if (b.grad) {
+          const newGrad = await add(b.grad, dB)
+          b.grad.dispose()
+          dB.dispose()
+          b.grad = newGrad
+        } else {
+          b.grad = dB
+        }
+      }
+    })
+  }
+  return result
+}
+
+// --- Batched Transpose ---
+export async function batchedTranspose(input: Tensor): Promise<Tensor> {
+  // input: [B, R, C] -> result: [B, C, R]
+  if (input.shape.length !== 3) throw new Error('batchedTranspose expects 3D tensor')
+  const B = input.shape[0], R = input.shape[1], C = input.shape[2]
+  const device = await getGPUDevice()
+  const result = await Tensor.empty([B, C, R])
+  const pipeline = await getPipeline(device, batchedTransposeShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(B, R, C))
+  dispatch(device, {
+    pipeline,
+    buffers: [input.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [Math.ceil((R * C) / 256), B],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      // Backward of transpose is transpose
+      const dInput = await batchedTranspose(grad)
+      if (input.grad) {
+        const newGrad = await add(input.grad, dInput)
+        input.grad.dispose()
+        dInput.dispose()
+        input.grad = newGrad
+      } else {
+        input.grad = dInput
+      }
+    })
+  }
+  return result
+}
+
+// --- Reshape Heads ---
+export async function reshapeHeads(
+  input: Tensor, B: number, T: number, nHeads: number,
+): Promise<Tensor> {
+  // input: [B*T, D] -> result: [B*nHeads, T, headDim]
+  if (input.shape.length !== 2) throw new Error('reshapeHeads expects 2D tensor')
+  const D = input.shape[1]
+  const headDim = D / nHeads
+  const device = await getGPUDevice()
+  const result = await Tensor.empty([B * nHeads, T, headDim])
+  const pipeline = await getPipeline(device, reshapeHeadsShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(B, T, nHeads, headDim, 0)) // direction=0 (split)
+  const totalElements = B * nHeads * T * headDim
+  dispatch(device, {
+    pipeline,
+    buffers: [input.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [Math.ceil(totalElements / 256)],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      const dInput = await mergeHeads(grad, B, T, nHeads)
+      if (input.grad) {
+        const newGrad = await add(input.grad, dInput)
+        input.grad.dispose()
+        dInput.dispose()
+        input.grad = newGrad
+      } else {
+        input.grad = dInput
+      }
+    })
+  }
+  return result
+}
+
+// --- Merge Heads ---
+export async function mergeHeads(
+  input: Tensor, B: number, T: number, nHeads: number,
+): Promise<Tensor> {
+  // input: [B*nHeads, T, headDim] -> result: [B*T, D]
+  if (input.shape.length !== 3) throw new Error('mergeHeads expects 3D tensor')
+  const headDim = input.shape[2]
+  const D = nHeads * headDim
+  const device = await getGPUDevice()
+  const result = await Tensor.empty([B * T, D])
+  const pipeline = await getPipeline(device, reshapeHeadsShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(B, T, nHeads, headDim, 1)) // direction=1 (merge)
+  const totalElements = B * nHeads * T * headDim
+  dispatch(device, {
+    pipeline,
+    buffers: [input.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [Math.ceil(totalElements / 256)],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      const dInput = await reshapeHeads(grad, B, T, nHeads)
+      if (input.grad) {
+        const newGrad = await add(input.grad, dInput)
+        input.grad.dispose()
+        dInput.dispose()
+        input.grad = newGrad
+      } else {
+        input.grad = dInput
+      }
+    })
+  }
+  return result
+}
+
+// --- Softmax Backward ---
+async function softmaxBackward(
+  softmaxOut: Tensor, grad: Tensor, input: Tensor,
+): Promise<void> {
+  const cols = softmaxOut.shape[softmaxOut.shape.length - 1]
+  const rows = softmaxOut.size / cols
+  const device = await getGPUDevice()
+  const result = await Tensor.empty(softmaxOut.shape)
+  const pipeline = await getPipeline(device, softmaxBackwardShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(rows, cols))
+  dispatch(device, {
+    pipeline,
+    buffers: [softmaxOut.buffer, grad.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [rows],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (input.requiresGrad) {
+    if (input.grad) {
+      const newGrad = await add(input.grad, result)
+      input.grad.dispose()
+      result.dispose()
+      input.grad = newGrad
+    } else {
+      input.grad = result
+    }
+  } else {
+    result.dispose()
+  }
+}
+
+// --- Causal Mask Backward ---
+async function causalMaskBackward(
+  grad: Tensor, T: number, totalSlices: number, input: Tensor,
+): Promise<void> {
+  const device = await getGPUDevice()
+  const result = await Tensor.empty(grad.shape)
+  const pipeline = await getPipeline(device, causalMaskBackwardShader, 'main')
+  const uniform = createUniformBuffer(device, packU32(totalSlices, T))
+  dispatch(device, {
+    pipeline,
+    buffers: [grad.buffer, result.buffer],
+    uniformBuffer: uniform,
+    workgroups: [Math.ceil(grad.size / 256)],
+  })
+  await device.queue.onSubmittedWorkDone()
+  uniform.destroy()
+
+  if (input.requiresGrad) {
+    if (input.grad) {
+      const newGrad = await add(input.grad, result)
+      input.grad.dispose()
+      result.dispose()
+      input.grad = newGrad
+    } else {
+      input.grad = result
+    }
+  } else {
+    result.dispose()
+  }
+}
+
 // --- Backward ops (forward declarations, implemented in backward.ts) ---
 // These are lazily imported to avoid circular deps
 
@@ -552,7 +821,7 @@ async function crossEntropyBackward(
   return crossEntropyBackwardOp(logits, targets, grad)
 }
 
-// --- Multi-head Attention (composed) ---
+// --- Multi-head Attention (GPU-native with full autograd) ---
 export async function multiHeadAttention(
   Q: Tensor, K: Tensor, V: Tensor,
   nHeads: number, seqLen: number, dModel: number,
@@ -560,76 +829,41 @@ export async function multiHeadAttention(
   const headDim = dModel / nHeads
   const scale = 1 / Math.sqrt(headDim)
   const B = Q.shape[0] / seqLen // batch size (Q is [B*T, dModel])
+  const grad = isGradEnabled()
 
-  // We'll process each batch*head by slicing and doing 2D matmuls
-  // For Phase 1: reshape to [B*nHeads, T, headDim] by reading back and re-uploading
-  // This is slow but correct; Phase 2 will use batched matmul kernels
+  // 1. Reshape Q, K, V: [B*T, D] -> [B*nHeads, T, headDim]
+  const Qh = await reshapeHeads(Q, B, seqLen, nHeads)
+  const Kh = await reshapeHeads(K, B, seqLen, nHeads)
+  const Vh = await reshapeHeads(V, B, seqLen, nHeads)
 
-  const qArr = await Q.toArray()
-  const kArr = await K.toArray()
-  const vArr = await V.toArray()
+  // 2. KhT = batchedTranspose(Kh): [B*nH, headDim, T]
+  const KhT = await batchedTranspose(Kh)
 
-  const outArr = new Float32Array(B * seqLen * dModel)
+  // 3. scores = Qh @ KhT: [B*nH, T, T]
+  const scores = await batchedMatmul(Qh, KhT)
+  // Don't dispose KhT/Qh yet - batchedMatmul backward needs them
+  if (!grad) { KhT.dispose(); Qh.dispose() }
 
-  for (let b = 0; b < B; b++) {
-    for (let h = 0; h < nHeads; h++) {
-      // Extract head slices: [T, headDim]
-      const qHead = new Float32Array(seqLen * headDim)
-      const kHead = new Float32Array(seqLen * headDim)
-      const vHead = new Float32Array(seqLen * headDim)
+  // 4. Scale scores
+  const scaledScores = await scalarMul(scores, scale)
+  if (!grad) scores.dispose()
 
-      for (let t = 0; t < seqLen; t++) {
-        const srcOffset = (b * seqLen + t) * dModel + h * headDim
-        const dstOffset = t * headDim
-        qHead.set(qArr.subarray(srcOffset, srcOffset + headDim), dstOffset)
-        kHead.set(kArr.subarray(srcOffset, srcOffset + headDim), dstOffset)
-        vHead.set(vArr.subarray(srcOffset, srcOffset + headDim), dstOffset)
-      }
+  // 5. Causal mask
+  const masked = await causalMask(scaledScores)
+  if (!grad) scaledScores.dispose()
 
-      // Q @ K^T -> [T, T]
-      const qTensor = await Tensor.create(qHead, [seqLen, headDim])
-      const kTensor = await Tensor.create(kHead, [seqLen, headDim])
-      const vTensor = await Tensor.create(vHead, [seqLen, headDim])
+  // 6. Softmax
+  const attnWeights = await softmax(masked)
+  if (!grad) masked.dispose()
 
-      const kT = await transpose(kTensor)
-      let scores = await matmul(qTensor, kT)
-      kT.dispose()
+  // 7. attnOut = attnWeights @ Vh: [B*nH, T, headDim]
+  const attnOut = await batchedMatmul(attnWeights, Vh)
+  // batchedMatmul backward needs attnWeights and Vh
+  if (!grad) { Kh.dispose(); Vh.dispose(); attnWeights.dispose() }
 
-      // Scale
-      const scaleTensor = await Tensor.create(
-        new Float32Array(scores.size).fill(scale),
-        scores.shape,
-      )
-      let scaledScores = await elementwiseBinary(scores, scaleTensor, 2)
-      scores.dispose()
-      scaleTensor.dispose()
+  // 8. Merge heads: [B*nH, T, headDim] -> [B*T, D]
+  const output = await mergeHeads(attnOut, B, seqLen, nHeads)
+  if (!grad) attnOut.dispose()
 
-      // Causal mask
-      const masked = await causalMask(scaledScores)
-      scaledScores.dispose()
-
-      // Softmax
-      const attnWeights = await softmax(masked)
-      masked.dispose()
-
-      // Attn @ V -> [T, headDim]
-      const headOut = await matmul(attnWeights, vTensor)
-      attnWeights.dispose()
-
-      // Write back to output
-      const headOutArr = await headOut.toArray()
-      for (let t = 0; t < seqLen; t++) {
-        const dstOffset = (b * seqLen + t) * dModel + h * headDim
-        const srcOffset = t * headDim
-        outArr.set(headOutArr.subarray(srcOffset, srcOffset + headDim), dstOffset)
-      }
-
-      qTensor.dispose()
-      kTensor.dispose()
-      vTensor.dispose()
-      headOut.dispose()
-    }
-  }
-
-  return Tensor.create(outArr, Q.shape)
+  return output
 }

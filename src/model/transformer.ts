@@ -1,5 +1,6 @@
 import { Tensor } from '../gpu/tensor'
 import { add, matmul, gelu, layernorm, embedding, multiHeadAttention } from '../gpu/ops'
+import { isGradEnabled } from '../gpu/autograd'
 import type { TransformerConfig } from './config'
 
 export interface LayerParams {
@@ -92,6 +93,9 @@ export async function transformerForward(
   const B = inputIds.shape[0]
   const T = inputIds.shape[1]
   const { nHeads, dModel } = config
+  // When grad is enabled (training), keep intermediates alive for backward.
+  // When grad is disabled (generation), dispose eagerly to avoid GPU memory leaks.
+  const training = isGradEnabled()
 
   // Flatten inputIds to [B*T] for embedding lookup
   // inputIds is [B, T] stored as contiguous u32
@@ -110,7 +114,8 @@ export async function transformerForward(
   }
   const posIdsTensor = await Tensor.fromU32(posIndices, [B * T])
   const posEmbed = await embedding(params.posEmbed, posIdsTensor)
-  posIdsTensor.dispose()
+  if (!training) posIdsTensor.dispose()
+  // When training: posIdsTensor kept alive — embedding backward needs indices.buffer
 
   // Add token + position embeddings
   const xPlusPos = await add(x, posEmbed)
@@ -120,6 +125,8 @@ export async function transformerForward(
 
   // Transformer layers
   for (const layer of params.layers) {
+    const prevX = x // keep ref for conditional disposal
+
     // Pre-norm attention
     const normed1 = await layernorm(x, layer.lnAttnGamma, layer.lnAttnBeta)
 
@@ -127,33 +134,36 @@ export async function transformerForward(
     const Q = await matmul(normed1, layer.Wq)
     const K = await matmul(normed1, layer.Wk)
     const V = await matmul(normed1, layer.Wv)
-    normed1.dispose()
+    if (!training) normed1.dispose()
+    // When training: normed1 kept alive — matmul backward needs it for transpose(a)
 
     // Multi-head attention
     const attnOut = await multiHeadAttention(Q, K, V, nHeads, T, dModel)
-    Q.dispose()
-    K.dispose()
-    V.dispose()
+    if (!training) { Q.dispose(); K.dispose(); V.dispose() }
 
     // Output projection
     const projected = await matmul(attnOut, layer.Wo)
-    attnOut.dispose()
+    if (!training) attnOut.dispose()
+    // When training: attnOut kept alive — matmul backward needs it
 
     // Residual connection
     const residual1 = await add(x, projected)
-    x.dispose()
+    if (!training) prevX.dispose()
+    // When training: x kept alive — layernorm backward needs input.buffer
     projected.dispose()
     x = residual1
+
+    const prevX2 = x // keep ref for conditional disposal
 
     // Pre-norm FFN
     const normed2 = await layernorm(x, layer.lnFFGamma, layer.lnFFBeta)
 
     // FFN: linear -> GELU -> linear
     let ffn = await matmul(normed2, layer.W1)
-    normed2.dispose()
+    if (!training) normed2.dispose()
+    // When training: normed2 kept alive — matmul backward needs it
 
     // Add bias (broadcast: [B*T, dFF] + [dFF])
-    // For Phase 1, we need broadcast add. Let's tile the bias.
     const b1Tiled = await tileBias(layer.b1, B * T)
     const ffnBiased = await add(ffn, b1Tiled)
     ffn.dispose()
@@ -161,10 +171,12 @@ export async function transformerForward(
     ffn = ffnBiased
 
     const activated = await gelu(ffn)
-    ffn.dispose()
+    if (!training) ffn.dispose()
+    // When training: ffn kept alive — gelu backward needs input.buffer
 
     let ffnOut = await matmul(activated, layer.W2)
-    activated.dispose()
+    if (!training) activated.dispose()
+    // When training: activated kept alive — matmul backward needs it
 
     const b2Tiled = await tileBias(layer.b2, B * T)
     const ffnOutBiased = await add(ffnOut, b2Tiled)
@@ -174,18 +186,22 @@ export async function transformerForward(
 
     // Residual connection
     const residual2 = await add(x, ffnOut)
-    x.dispose()
+    if (!training) prevX2.dispose()
+    // When training: x kept alive — layernorm backward needs input.buffer
     ffnOut.dispose()
     x = residual2
   }
 
   // Final layer norm
+  const prevXFinal = x
   const normedFinal = await layernorm(x, params.lnFinalGamma, params.lnFinalBeta)
-  x.dispose()
+  if (!training) prevXFinal.dispose()
+  // When training: x kept alive — layernorm backward needs input.buffer
 
   // LM head: [B*T, dModel] @ [dModel, vocabSize] -> [B*T, vocabSize]
   const logits = await matmul(normedFinal, params.lmHead)
-  normedFinal.dispose()
+  if (!training) normedFinal.dispose()
+  // When training: normedFinal kept alive — matmul backward needs it
 
   return logits
 }
