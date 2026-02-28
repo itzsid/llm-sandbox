@@ -42,10 +42,13 @@ export function clearTape(): void {
   // Dispose all intermediate tensors (tape outputs) — their GPU buffers
   // are no longer needed after backward + optimizer step.
   // Model parameters are never tape outputs, so they're safe.
+  //
+  // Always call dispose() — even on already-disposed tensors — because
+  // backward may have set .grad on tensors that were eagerly disposed
+  // during the forward pass. Tensor.dispose() guards against double
+  // buffer destruction via _disposed flag, but still cleans up .grad.
   for (const entry of tape) {
-    if (!entry.output._disposed) {
-      entry.output.dispose()
-    }
+    entry.output.dispose()
   }
   tape = []
 }

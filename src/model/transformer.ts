@@ -1,6 +1,6 @@
 import { Tensor } from '../gpu/tensor'
 import { add, matmul, gelu, layernorm, embedding, multiHeadAttention } from '../gpu/ops'
-import { isGradEnabled } from '../gpu/autograd'
+import { isGradEnabled, recordOp } from '../gpu/autograd'
 import type { TransformerConfig } from './config'
 
 export interface LayerParams {
@@ -114,8 +114,13 @@ export async function transformerForward(
   }
   const posIdsTensor = await Tensor.fromU32(posIndices, [B * T])
   const posEmbed = await embedding(params.posEmbed, posIdsTensor)
-  if (!training) posIdsTensor.dispose()
-  // When training: posIdsTensor kept alive — embedding backward needs indices.buffer
+  if (!training) {
+    posIdsTensor.dispose()
+  } else {
+    // During training, posIdsTensor must stay alive for embedding backward.
+    // Record a no-op on the tape so clearTape() disposes it automatically.
+    recordOp(posIdsTensor, [], async () => {})
+  }
 
   // Add token + position embeddings
   const xPlusPos = await add(x, posEmbed)

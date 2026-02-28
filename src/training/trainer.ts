@@ -168,6 +168,11 @@ export class Trainer {
       const elapsed = (performance.now() - stepStart) / 1000
       const tokensPerSec = (this.batchSize * this.seqLen) / elapsed
 
+      // Diagnostics: log every 10 steps
+      if (this._step % 10 === 0) {
+        console.log(`[train] step=${this._step} loss=${lossVal.toFixed(4)} tok/s=${tokensPerSec.toFixed(0)} elapsed=${(elapsed * 1000).toFixed(0)}ms`)
+      }
+
       const metrics: TrainingMetrics = {
         step: this._step,
         loss: lossVal,
