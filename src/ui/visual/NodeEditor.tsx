@@ -122,13 +122,6 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
     setGraph(configToGraph(config))
   }, [config])
 
-  // Compute the total SVG height based on node positions
-  const svgHeight = useMemo(() => {
-    if (graph.nodes.length === 0) return CANVAS_HEIGHT
-    const maxY = Math.max(...graph.nodes.map((n) => n.y + n.height))
-    return Math.max(CANVAS_HEIGHT, maxY + 60)
-  }, [graph])
-
   // Selected node object
   const selectedNode = useMemo(
     () => graph.nodes.find((n) => n.id === selectedNodeId) ?? null,
