@@ -13,11 +13,11 @@ const NODE_COLORS: Record<string, string> = {
   output: '#666', // gray
 }
 
-const NODE_WIDTH = 200
-const NODE_HEIGHT_NORMAL = 50
-const NODE_HEIGHT_BLOCK = 70 // transformer blocks are taller to show params
-const VERTICAL_SPACING = 80
-const CENTER_X = 300 // center for ~600px wide canvas
+const NODE_WIDTH = 280
+const NODE_HEIGHT_NORMAL = 64
+const NODE_HEIGHT_BLOCK = 90 // transformer blocks are taller to show params
+const VERTICAL_SPACING = 60
+const CENTER_X = 350 // center for ~700px wide canvas
 const START_Y = 30
 
 function makeNode(

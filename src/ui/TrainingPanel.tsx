@@ -126,59 +126,58 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
 
   return (
     <div className="training-panel">
-      <div className="training-layout">
-        {/* Left column: controls + metrics */}
-        <div className="training-main">
-          <div className="controls">
-            {(status === 'idle' || status === 'stopped') && (
-              <button onClick={handleStart} className="btn-start">
-                {status === 'stopped' ? 'Resume Training' : 'Start Training'}
-              </button>
-            )}
-            {status === 'training' && (
-              <button onClick={handleStop} className="btn-stop">
-                Stop
-              </button>
-            )}
-            {status === 'initializing' && (
-              <button disabled className="btn-disabled">
-                Initializing...
-              </button>
-            )}
-            {!dataset && status === 'idle' && (
-              <span className="no-dataset-hint">Select a dataset in Configure tab</span>
-            )}
-          </div>
-
-          {error && <div className="error-msg">{error}</div>}
-
-          {metrics && (
-            <div className="metrics">
-              <div className="metric">
-                <span className="metric-label">Step</span>
-                <span className="metric-value">{metrics.step}</span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">Loss</span>
-                <span className="metric-value">{metrics.loss.toFixed(4)}</span>
-              </div>
-              <div className="metric">
-                <span className="metric-label">Tokens/s</span>
-                <span className="metric-value">{metrics.tokensPerSec.toFixed(0)}</span>
-              </div>
-              {metrics.valLoss !== undefined && (
-                <div className="metric">
-                  <span className="metric-label">Val Loss</span>
-                  <span className="metric-value">{metrics.valLoss.toFixed(4)}</span>
-                </div>
-              )}
-              <div className="metric">
-                <span className="metric-label">LR</span>
-                <span className="metric-value">{metrics.learningRate.toExponential(1)}</span>
-              </div>
+      {/* Full-width: metrics strip + charts */}
+      <div className="metrics-strip">
+        {(status === 'idle' || status === 'stopped') && (
+          <button onClick={handleStart} className="btn-start">
+            {status === 'stopped' ? 'Resume Training' : 'Start Training'}
+          </button>
+        )}
+        {status === 'training' && (
+          <button onClick={handleStop} className="btn-stop">
+            Stop
+          </button>
+        )}
+        {status === 'initializing' && (
+          <button disabled className="btn-disabled">
+            Initializing...
+          </button>
+        )}
+        {!dataset && status === 'idle' && (
+          <span className="no-dataset-hint">Select a dataset in Configure tab</span>
+        )}
+        {metrics && (
+          <div className="metrics">
+            <div className="metric">
+              <span className="metric-label">Step</span>
+              <span className="metric-value">{metrics.step}</span>
             </div>
-          )}
+            <div className="metric">
+              <span className="metric-label">Loss</span>
+              <span className="metric-value">{metrics.loss.toFixed(4)}</span>
+            </div>
+            <div className="metric">
+              <span className="metric-label">Tokens/s</span>
+              <span className="metric-value">{metrics.tokensPerSec.toFixed(0)}</span>
+            </div>
+            {metrics.valLoss !== undefined && (
+              <div className="metric">
+                <span className="metric-label">Val Loss</span>
+                <span className="metric-value">{metrics.valLoss.toFixed(4)}</span>
+              </div>
+            )}
+            <div className="metric">
+              <span className="metric-label">LR</span>
+              <span className="metric-value">{metrics.learningRate.toExponential(1)}</span>
+            </div>
+          </div>
+        )}
+      </div>
 
+      {error && <div className="error-msg">{error}</div>}
+
+      {(lossHistory.length > 1 || valLossHistory.length > 1) && (
+        <div className="charts-grid">
           {lossHistory.length > 1 && (
             <MetricsChart
               data={lossHistory}
@@ -188,27 +187,31 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
               formatValue={(v) => v.toFixed(2)}
             />
           )}
-
           {valLossHistory.length > 1 && (
             <MetricsChart
               data={valLossHistory}
               label="Validation Loss"
               color="#2196f3"
-              height={120}
+              height={140}
               formatValue={(v) => v.toFixed(2)}
             />
           )}
+        </div>
+      )}
 
-          {tokensPerSecHistory.length > 1 && (
-            <MetricsChart
-              data={tokensPerSecHistory}
-              label="Tokens/sec"
-              color="#ff9800"
-              height={100}
-              formatValue={(v) => v.toFixed(0)}
-            />
-          )}
+      {tokensPerSecHistory.length > 1 && (
+        <MetricsChart
+          data={tokensPerSecHistory}
+          label="Tokens/sec"
+          color="#ff9800"
+          height={100}
+          formatValue={(v) => v.toFixed(0)}
+        />
+      )}
 
+      {/* 2-column: generation + sidebar */}
+      <div className="training-layout">
+        <div className="training-main">
           {/* Generation controls */}
           <div className="gen-controls">
             <h3>Generation</h3>

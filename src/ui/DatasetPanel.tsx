@@ -10,6 +10,7 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
   const [builtinDatasets] = useState(() => getBuiltinDatasets())
   const [loadingId, setLoadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(!!selected)
 
   const handleSelectBuiltin = useCallback(async (id: string) => {
     setLoadingId(id)
@@ -17,6 +18,7 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
     try {
       const dataset = await loadBuiltinDataset(id)
       onSelect(dataset)
+      setCollapsed(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -37,6 +39,7 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
       const name = file.name.replace(/\.txt$/i, '')
       const dataset = createCustomDataset(name, text)
       onSelect(dataset)
+      setCollapsed(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -50,6 +53,32 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
       handleSelectBuiltin(builtinDatasets[0].id)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-collapse when selected changes externally
+  useEffect(() => {
+    if (selected && !loadingId) {
+      setCollapsed(true)
+    }
+  }, [selected, loadingId])
+
+  // Collapsed view: single compact row
+  if (collapsed && selected && !loadingId) {
+    return (
+      <div className="dataset-panel" style={styles.container}>
+        <div style={styles.collapsedRow}>
+          <h3 style={styles.headingInline}>Dataset</h3>
+          <span style={styles.collapsedName}>{selected.name}</span>
+          <span style={styles.collapsedSize}>{selected.size}</span>
+          <button
+            style={styles.changeBtn}
+            onClick={() => setCollapsed(false)}
+          >
+            Change
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="dataset-panel" style={styles.container}>
@@ -108,12 +137,6 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
           />
         </label>
       </div>
-
-      {selected && (
-        <div style={styles.selectedInfo}>
-          <span style={styles.selectedLabel}>Selected:</span> {selected.name} ({selected.size})
-        </div>
-      )}
     </div>
   )
 }
@@ -193,22 +216,44 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     padding: '0.4rem 0.8rem',
-    background: '#2196f3',
-    color: '#fff',
-    border: 'none',
+    background: 'transparent',
+    color: '#aaa',
+    border: '1px solid #555',
     borderRadius: '4px',
     fontSize: '0.8rem',
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
-  selectedInfo: {
-    color: '#aaa',
-    fontSize: '0.75rem',
-    paddingTop: '0.25rem',
-    borderTop: '1px solid #333',
+  collapsedRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
   },
-  selectedLabel: {
-    color: '#4caf50',
+  headingInline: {
+    fontSize: '0.85rem',
+    color: '#888',
+    margin: 0,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+  collapsedName: {
+    color: '#e0e0e0',
+    fontSize: '0.85rem',
     fontWeight: 600,
+  },
+  collapsedSize: {
+    color: '#666',
+    fontSize: '0.75rem',
+  },
+  changeBtn: {
+    marginLeft: 'auto',
+    background: 'transparent',
+    border: '1px solid #555',
+    borderRadius: '4px',
+    color: '#aaa',
+    padding: '0.25rem 0.6rem',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
 }

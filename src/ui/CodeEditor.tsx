@@ -41,6 +41,15 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
 
+  // Determine which preset (if any) matches the current editor value
+  const activePresetKey = useMemo(() => {
+    const trimmed = value.trim()
+    for (const entry of PRESET_ENTRIES) {
+      if (configToText(entry.config).trim() === trimmed) return entry.key
+    }
+    return null
+  }, [value])
+
   // Sync scroll between textarea and pre
   const handleScroll = useCallback(() => {
     const textarea = textareaRef.current
@@ -95,23 +104,30 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
       {/* Header with presets and param count */}
       <div style={styles.header}>
         <div style={styles.presetRow}>
-          {PRESET_ENTRIES.map((entry) => (
-            <button
-              key={entry.key}
-              style={styles.presetButton}
-              onClick={() => handlePresetClick(entry.key)}
-              onMouseEnter={(e) => {
-                ;(e.target as HTMLElement).style.borderColor = '#666'
-                ;(e.target as HTMLElement).style.background = '#333'
-              }}
-              onMouseLeave={(e) => {
-                ;(e.target as HTMLElement).style.borderColor = '#444'
-                ;(e.target as HTMLElement).style.background = '#2a2a2a'
-              }}
-            >
-              {PRESET_LABELS[entry.key]}
-            </button>
-          ))}
+          {PRESET_ENTRIES.map((entry) => {
+            const isActive = activePresetKey === entry.key
+            return (
+              <button
+                key={entry.key}
+                style={isActive ? { ...styles.presetButton, ...styles.presetButtonActive } : styles.presetButton}
+                onClick={() => handlePresetClick(entry.key)}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    ;(e.target as HTMLElement).style.borderColor = '#666'
+                    ;(e.target as HTMLElement).style.background = '#333'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    ;(e.target as HTMLElement).style.borderColor = '#444'
+                    ;(e.target as HTMLElement).style.background = '#2a2a2a'
+                  }
+                }}
+              >
+                {PRESET_LABELS[entry.key]}
+              </button>
+            )
+          })}
         </div>
         <div style={styles.paramCount}>{formatParamCount(paramCount)}</div>
       </div>
@@ -200,6 +216,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: monoFont,
     cursor: 'pointer',
     transition: 'border-color 0.15s, background 0.15s',
+  },
+  presetButtonActive: {
+    background: '#333',
+    borderColor: '#4caf50',
+    color: '#4caf50',
   },
   paramCount: {
     color: '#888',

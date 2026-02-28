@@ -70,12 +70,13 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       {/* Label text — centered */}
       <text
         x={node.width / 2}
-        y={paramEntries.length > 0 ? node.height / 2 - 6 : node.height / 2}
+        y={paramEntries.length > 0 ? node.height / 2 - 8 : node.height / 2}
         textAnchor="middle"
         dominantBaseline="central"
         fill="#e0e0e0"
-        fontSize={12}
+        fontSize={15}
         fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
+        fontWeight={500}
         pointerEvents="none"
       >
         {node.label}
@@ -85,11 +86,11 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       {paramEntries.length > 0 && (
         <text
           x={node.width / 2}
-          y={node.height / 2 + 10}
+          y={node.height / 2 + 12}
           textAnchor="middle"
           dominantBaseline="central"
           fill="#999"
-          fontSize={10}
+          fontSize={13}
           fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
           pointerEvents="none"
         >

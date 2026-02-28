@@ -18,8 +18,8 @@ const MAX_ZOOM = 2.0
 const ZOOM_STEP = 0.1
 
 // SVG canvas dimensions
-const CANVAS_WIDTH = 600
-const CANVAS_HEIGHT = 500
+const CANVAS_WIDTH = 700
+const CANVAS_HEIGHT = 550
 
 const editorStyles: Record<string, React.CSSProperties> = {
   wrapper: {
@@ -274,8 +274,8 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
     [onChange]
   )
 
-  // SVG viewBox includes pan offset
-  const viewBox = `0 0 ${CANVAS_WIDTH} ${svgHeight}`
+  // Fixed viewBox — pan/zoom transform handles navigation
+  const viewBox = `0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`
 
   return (
     <div style={editorStyles.wrapper}>
