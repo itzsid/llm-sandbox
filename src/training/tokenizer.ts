@@ -6,6 +6,10 @@ export class CharTokenizer {
     return this.idxToChar.length
   }
 
+  get vocab(): string[] {
+    return [...this.idxToChar]
+  }
+
   buildVocab(text: string): void {
     const chars = new Set(text)
     this.idxToChar = Array.from(chars).sort()

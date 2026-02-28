@@ -1,29 +1,61 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Trainer, type TrainingMetrics } from '../training/trainer'
+import { MetricsChart } from './MetricsChart'
+import { CheckpointPanel } from './CheckpointPanel'
+import { ArchitectureDiagram } from './ArchitectureDiagram'
+import { toLegacyConfig } from '../model/schema'
+import type { ModelConfig } from '../model/schema'
+import type { Dataset } from '../data/datasets'
+import type { Checkpoint } from '../storage/checkpoint'
 
-export function TrainingPanel() {
+interface TrainingPanelProps {
+  config: ModelConfig
+  dataset: Dataset | null
+  onTrainingStateChange: (active: boolean) => void
+}
+
+export function TrainingPanel({ config, dataset, onTrainingStateChange }: TrainingPanelProps) {
   const [status, setStatus] = useState<'idle' | 'initializing' | 'training' | 'stopped'>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
+  const [valLossHistory, setValLossHistory] = useState<number[]>([])
+  const [tokensPerSecHistory, setTokensPerSecHistory] = useState<number[]>([])
   const [sampleText, setSampleText] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const [temperature, setTemperature] = useState(0.8)
+  const [maxTokens, setMaxTokens] = useState(100)
+  const [generating, setGenerating] = useState(false)
   const trainerRef = useRef<Trainer | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  const isTraining = status === 'training'
+
+  useEffect(() => {
+    onTrainingStateChange(isTraining)
+  }, [isTraining, onTrainingStateChange])
 
   const handleStart = useCallback(async () => {
+    if (!dataset) {
+      setError('Select a dataset first')
+      return
+    }
     try {
       setError(null)
       setStatus('initializing')
 
-      const trainer = new Trainer()
+      const legacyConfig = toLegacyConfig(config)
+      const trainer = new Trainer(legacyConfig)
       trainerRef.current = trainer
-      await trainer.init()
+      await trainer.init(dataset.text)
 
       setStatus('training')
       await trainer.train(
         (m) => {
           setMetrics(m)
           setLossHistory((prev) => [...prev.slice(-199), m.loss])
+          setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
+          if (m.valLoss !== undefined) {
+            setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
+          }
         },
         (text) => {
           setSampleText(text)
@@ -34,153 +66,209 @@ export function TrainingPanel() {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
     }
-  }, [])
+  }, [config, dataset])
 
   const handleStop = useCallback(() => {
     trainerRef.current?.stop()
     setStatus('stopped')
   }, [])
 
-  // Draw loss chart on canvas
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || lossHistory.length < 2) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const dpr = window.devicePixelRatio || 1
-    const rect = canvas.getBoundingClientRect()
-    canvas.width = rect.width * dpr
-    canvas.height = rect.height * dpr
-    ctx.scale(dpr, dpr)
-    const W = rect.width
-    const H = rect.height
-
-    // Clear
-    ctx.clearRect(0, 0, W, H)
-
-    // Compute Y range with padding
-    const minLoss = Math.min(...lossHistory)
-    const maxLoss = Math.max(...lossHistory)
-    const yPad = Math.max((maxLoss - minLoss) * 0.1, 0.01)
-    const yMin = minLoss - yPad
-    const yMax = maxLoss + yPad
-
-    const pad = { top: 8, right: 8, bottom: 20, left: 40 }
-    const plotW = W - pad.left - pad.right
-    const plotH = H - pad.top - pad.bottom
-
-    const toX = (i: number) => pad.left + (i / (lossHistory.length - 1)) * plotW
-    const toY = (v: number) => pad.top + (1 - (v - yMin) / (yMax - yMin)) * plotH
-
-    // Grid lines and Y labels
-    ctx.strokeStyle = '#333'
-    ctx.lineWidth = 0.5
-    ctx.fillStyle = '#666'
-    ctx.font = '10px monospace'
-    ctx.textAlign = 'right'
-    const nTicks = 4
-    for (let i = 0; i <= nTicks; i++) {
-      const v = yMin + (i / nTicks) * (yMax - yMin)
-      const y = toY(v)
-      ctx.beginPath()
-      ctx.moveTo(pad.left, y)
-      ctx.lineTo(W - pad.right, y)
-      ctx.stroke()
-      ctx.fillText(v.toFixed(2), pad.left - 4, y + 3)
+  const handleGenerate = useCallback(async () => {
+    const trainer = trainerRef.current
+    if (!trainer || !trainer.params) return
+    setGenerating(true)
+    try {
+      const text = await trainer.generateSample(maxTokens, temperature)
+      setSampleText(text)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setGenerating(false)
     }
+  }, [temperature, maxTokens])
 
-    // X axis label
-    ctx.textAlign = 'center'
-    ctx.fillStyle = '#555'
-    ctx.fillText(`${lossHistory.length} steps`, W / 2, H - 2)
-
-    // Gradient fill
-    const gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH)
-    gradient.addColorStop(0, 'rgba(76, 175, 80, 0.25)')
-    gradient.addColorStop(1, 'rgba(76, 175, 80, 0.02)')
-
-    ctx.beginPath()
-    ctx.moveTo(toX(0), toY(lossHistory[0]))
-    for (let i = 1; i < lossHistory.length; i++) {
-      ctx.lineTo(toX(i), toY(lossHistory[i]))
+  const handleCheckpointLoad = useCallback(async (checkpoint: Checkpoint) => {
+    if (!dataset) {
+      setError('Select a dataset first')
+      return
     }
-    ctx.lineTo(toX(lossHistory.length - 1), pad.top + plotH)
-    ctx.lineTo(toX(0), pad.top + plotH)
-    ctx.closePath()
-    ctx.fillStyle = gradient
-    ctx.fill()
+    try {
+      setError(null)
+      setStatus('initializing')
 
-    // Line
-    ctx.beginPath()
-    ctx.moveTo(toX(0), toY(lossHistory[0]))
-    for (let i = 1; i < lossHistory.length; i++) {
-      ctx.lineTo(toX(i), toY(lossHistory[i]))
+      const legacyConfig = checkpoint.config
+      const trainer = new Trainer(legacyConfig)
+      trainerRef.current = trainer
+      await trainer.loadFromCheckpoint(
+        checkpoint.params,
+        checkpoint.config,
+        checkpoint.step,
+        checkpoint.lossHistory,
+        checkpoint.vocab,
+        dataset.text,
+      )
+
+      setLossHistory(checkpoint.lossHistory.slice(-200))
+      setMetrics({
+        step: checkpoint.step,
+        loss: checkpoint.lossHistory[checkpoint.lossHistory.length - 1] ?? 0,
+        tokensPerSec: 0,
+        learningRate: 3e-4,
+      })
+      setStatus('stopped')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setStatus('idle')
     }
-    ctx.strokeStyle = '#4caf50'
-    ctx.lineWidth = 1.5
-    ctx.stroke()
+  }, [dataset])
 
-    // Current value dot
-    const lastIdx = lossHistory.length - 1
-    ctx.beginPath()
-    ctx.arc(toX(lastIdx), toY(lossHistory[lastIdx]), 3, 0, Math.PI * 2)
-    ctx.fillStyle = '#4caf50'
-    ctx.fill()
-  }, [lossHistory])
+  const trainer = trainerRef.current
 
   return (
     <div className="training-panel">
-      <div className="controls">
-        {(status === 'idle' || status === 'stopped') && (
-          <button onClick={handleStart} className="btn-start">
-            Start Training
-          </button>
-        )}
-        {status === 'training' && (
-          <button onClick={handleStop} className="btn-stop">
-            Stop
-          </button>
-        )}
-        {status === 'initializing' && (
-          <button disabled className="btn-disabled">
-            Initializing...
-          </button>
-        )}
+      <div className="training-layout">
+        {/* Left column: controls + metrics */}
+        <div className="training-main">
+          <div className="controls">
+            {(status === 'idle' || status === 'stopped') && (
+              <button onClick={handleStart} className="btn-start">
+                {status === 'stopped' ? 'Resume Training' : 'Start Training'}
+              </button>
+            )}
+            {status === 'training' && (
+              <button onClick={handleStop} className="btn-stop">
+                Stop
+              </button>
+            )}
+            {status === 'initializing' && (
+              <button disabled className="btn-disabled">
+                Initializing...
+              </button>
+            )}
+            {!dataset && status === 'idle' && (
+              <span className="no-dataset-hint">Select a dataset in Configure tab</span>
+            )}
+          </div>
+
+          {error && <div className="error-msg">{error}</div>}
+
+          {metrics && (
+            <div className="metrics">
+              <div className="metric">
+                <span className="metric-label">Step</span>
+                <span className="metric-value">{metrics.step}</span>
+              </div>
+              <div className="metric">
+                <span className="metric-label">Loss</span>
+                <span className="metric-value">{metrics.loss.toFixed(4)}</span>
+              </div>
+              <div className="metric">
+                <span className="metric-label">Tokens/s</span>
+                <span className="metric-value">{metrics.tokensPerSec.toFixed(0)}</span>
+              </div>
+              {metrics.valLoss !== undefined && (
+                <div className="metric">
+                  <span className="metric-label">Val Loss</span>
+                  <span className="metric-value">{metrics.valLoss.toFixed(4)}</span>
+                </div>
+              )}
+              <div className="metric">
+                <span className="metric-label">LR</span>
+                <span className="metric-value">{metrics.learningRate.toExponential(1)}</span>
+              </div>
+            </div>
+          )}
+
+          {lossHistory.length > 1 && (
+            <MetricsChart
+              data={lossHistory}
+              label="Training Loss"
+              color="#4caf50"
+              height={140}
+              formatValue={(v) => v.toFixed(2)}
+            />
+          )}
+
+          {valLossHistory.length > 1 && (
+            <MetricsChart
+              data={valLossHistory}
+              label="Validation Loss"
+              color="#2196f3"
+              height={120}
+              formatValue={(v) => v.toFixed(2)}
+            />
+          )}
+
+          {tokensPerSecHistory.length > 1 && (
+            <MetricsChart
+              data={tokensPerSecHistory}
+              label="Tokens/sec"
+              color="#ff9800"
+              height={100}
+              formatValue={(v) => v.toFixed(0)}
+            />
+          )}
+
+          {/* Generation controls */}
+          <div className="gen-controls">
+            <h3>Generation</h3>
+            <div className="gen-sliders">
+              <div className="gen-slider">
+                <label>Temperature: {temperature.toFixed(1)}</label>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="2.0"
+                  step="0.1"
+                  value={temperature}
+                  onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                />
+              </div>
+              <div className="gen-slider">
+                <label>Max Tokens: {maxTokens}</label>
+                <input
+                  type="range"
+                  min="50"
+                  max="500"
+                  step="50"
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                />
+              </div>
+              <button
+                className="btn-generate"
+                onClick={handleGenerate}
+                disabled={!trainer?.params || isTraining || generating}
+              >
+                {generating ? 'Generating...' : 'Generate'}
+              </button>
+            </div>
+          </div>
+
+          {sampleText && (
+            <div className="sample-output">
+              <h3>Generated Sample</h3>
+              <pre className="sample-text">{sampleText}</pre>
+            </div>
+          )}
+        </div>
+
+        {/* Right column: architecture + checkpoints */}
+        <div className="training-sidebar">
+          <ArchitectureDiagram config={config} />
+
+          <CheckpointPanel
+            params={trainer?.params ?? null}
+            config={trainer?.config ?? toLegacyConfig(config)}
+            step={trainer?.step ?? 0}
+            lossHistory={lossHistory}
+            vocab={trainer?.tokenizer?.vocab ?? []}
+            datasetId={dataset?.id ?? ''}
+            onLoad={handleCheckpointLoad}
+            disabled={isTraining}
+          />
+        </div>
       </div>
-
-      {error && <div className="error-msg">{error}</div>}
-
-      {metrics && (
-        <div className="metrics">
-          <div className="metric">
-            <span className="metric-label">Step</span>
-            <span className="metric-value">{metrics.step}</span>
-          </div>
-          <div className="metric">
-            <span className="metric-label">Loss</span>
-            <span className="metric-value">{metrics.loss.toFixed(4)}</span>
-          </div>
-          <div className="metric">
-            <span className="metric-label">Tokens/s</span>
-            <span className="metric-value">{metrics.tokensPerSec.toFixed(0)}</span>
-          </div>
-        </div>
-      )}
-
-      {lossHistory.length > 0 && (
-        <div className="loss-chart-container">
-          <h3>Loss</h3>
-          <canvas ref={canvasRef} className="loss-canvas" />
-        </div>
-      )}
-
-      {sampleText && (
-        <div className="sample-output">
-          <h3>Generated Sample</h3>
-          <pre className="sample-text">{sampleText}</pre>
-        </div>
-      )}
     </div>
   )
 }

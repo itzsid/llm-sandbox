@@ -15,3 +15,16 @@ export const NANO_GPT_CONFIG: TransformerConfig = {
   dModel: 128,
   dFF: 512,
 }
+
+export {
+  type ModelConfig,
+  type LayerConfig,
+  type ConfigError,
+  validateConfig,
+  estimateParamCount,
+  toLegacyConfig,
+  fromLegacyConfig,
+  configToText,
+  textToConfig,
+  PRESETS,
+} from './schema'

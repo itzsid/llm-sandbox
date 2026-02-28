@@ -3,65 +3,100 @@ import { crossEntropy } from '../gpu/ops'
 import { backward, clearTape, setGradEnabled } from '../gpu/autograd'
 import { AdamOptimizer } from '../gpu/optimizer'
 import { CharTokenizer } from './tokenizer'
-import { initTransformer, transformerForward, getAllParams, type TransformerParams } from '../model/transformer'
+import { initTransformer, transformerForward, getAllParams, deserializeParams, type TransformerParams } from '../model/transformer'
 import { type TransformerConfig, NANO_GPT_CONFIG } from '../model/config'
-import tinyShakespeare from '../data/tiny-shakespeare.txt?raw'
 
 export interface TrainingMetrics {
   step: number
   loss: number
   tokensPerSec: number
+  valLoss?: number
+  learningRate: number
+  gradNorm?: number
 }
 
 export class Trainer {
-  private config: TransformerConfig
-  private tokenizer: CharTokenizer | null = null
+  private _config: TransformerConfig
+  private _tokenizer: CharTokenizer | null = null
   private encodedText: Uint32Array | null = null
-  private params: TransformerParams | null = null
+  private valStart = 0
+  private _params: TransformerParams | null = null
   private optimizer: AdamOptimizer | null = null
-  private allParams: Tensor[] = []
+  private _allParams: Tensor[] = []
   private running = false
   private _step = 0
   private batchSize = 4
   private seqLen: number
+  private lr = 3e-4
+  private _lossHistory: number[] = []
 
   constructor(config?: TransformerConfig) {
-    this.config = config ?? NANO_GPT_CONFIG
-    this.seqLen = this.config.blockSize
+    this._config = config ?? NANO_GPT_CONFIG
+    this.seqLen = this._config.blockSize
   }
 
-  async init(): Promise<void> {
-    // Build tokenizer
-    this.tokenizer = new CharTokenizer()
-    this.tokenizer.buildVocab(tinyShakespeare)
-    console.log(`Vocab size: ${this.tokenizer.vocabSize}`)
+  get config(): TransformerConfig { return this._config }
+  get params(): TransformerParams | null { return this._params }
+  get tokenizer(): CharTokenizer | null { return this._tokenizer }
+  get lossHistory(): number[] { return this._lossHistory }
+  get step(): number { return this._step }
+  get isRunning(): boolean { return this.running }
 
-    // Override vocabSize from actual data
-    this.config = { ...this.config, vocabSize: this.tokenizer.vocabSize }
+  async init(text: string): Promise<void> {
+    this._tokenizer = new CharTokenizer()
+    this._tokenizer.buildVocab(text)
+    console.log(`Vocab size: ${this._tokenizer.vocabSize}`)
 
-    // Encode text
-    this.encodedText = this.tokenizer.encode(tinyShakespeare)
-    console.log(`Encoded ${this.encodedText.length} tokens`)
+    this._config = { ...this._config, vocabSize: this._tokenizer.vocabSize }
 
-    // Init model
-    this.params = await initTransformer(this.config)
-    this.allParams = getAllParams(this.params)
-    this.optimizer = new AdamOptimizer(this.allParams, { lr: 3e-4, weightDecay: 0.01 })
+    this.encodedText = this._tokenizer.encode(text)
+    // 90/10 train/val split
+    this.valStart = Math.floor(this.encodedText.length * 0.9)
+    console.log(`Encoded ${this.encodedText.length} tokens (train: ${this.valStart}, val: ${this.encodedText.length - this.valStart})`)
 
-    const totalParams = this.allParams.reduce((sum, p) => sum + p.size, 0)
+    this._params = await initTransformer(this._config)
+    this._allParams = getAllParams(this._params)
+    this.optimizer = new AdamOptimizer(this._allParams, { lr: this.lr, weightDecay: 0.01 })
+
+    const totalParams = this._allParams.reduce((sum, p) => sum + p.size, 0)
     console.log(`Model initialized: ${totalParams.toLocaleString()} parameters`)
   }
 
-  sampleBatch(): { inputs: Uint32Array; targets: Uint32Array } {
+  async loadFromCheckpoint(
+    serializedParams: Record<string, { shape: number[]; data: Float32Array }>,
+    config: TransformerConfig,
+    step: number,
+    lossHistory: number[],
+    vocab: string[],
+    text: string,
+  ): Promise<void> {
+    this._tokenizer = new CharTokenizer()
+    this._tokenizer.buildVocab(text)
+    this._config = config
+    this.seqLen = config.blockSize
+    this.encodedText = this._tokenizer.encode(text)
+    this.valStart = Math.floor(this.encodedText.length * 0.9)
+
+    this._params = await deserializeParams(serializedParams, config)
+    this._allParams = getAllParams(this._params)
+    this.optimizer = new AdamOptimizer(this._allParams, { lr: this.lr, weightDecay: 0.01 })
+    this._step = step
+    this._lossHistory = [...lossHistory]
+  }
+
+  private sampleBatch(validation = false): { inputs: Uint32Array; targets: Uint32Array } {
     if (!this.encodedText) throw new Error('Not initialized')
     const B = this.batchSize
     const T = this.seqLen
     const inputs = new Uint32Array(B * T)
     const targets = new Uint32Array(B * T)
-    const maxStart = this.encodedText.length - T - 1
+
+    const start0 = validation ? this.valStart : 0
+    const end0 = validation ? this.encodedText.length : this.valStart
+    const rangeLen = end0 - start0 - T - 1
 
     for (let b = 0; b < B; b++) {
-      const start = Math.floor(Math.random() * maxStart)
+      const start = start0 + Math.floor(Math.random() * rangeLen)
       for (let t = 0; t < T; t++) {
         inputs[b * T + t] = this.encodedText[start + t]
         targets[b * T + t] = this.encodedText[start + t + 1]
@@ -70,24 +105,58 @@ export class Trainer {
     return { inputs, targets }
   }
 
+  private async computeValLoss(): Promise<number> {
+    if (!this._params) return 0
+    setGradEnabled(false)
+    try {
+      const { inputs, targets } = this.sampleBatch(true)
+      const inputTensor = await Tensor.fromU32(inputs, [this.batchSize, this.seqLen])
+      const targetTensor = await Tensor.fromU32(targets, [this.batchSize * this.seqLen])
+      const logits = await transformerForward(this._params, inputTensor, this._config)
+      const loss = await crossEntropy(logits, targetTensor)
+      const val = (await loss.toArray())[0]
+      inputTensor.dispose()
+      targetTensor.dispose()
+      logits.dispose()
+      loss.dispose()
+      return val
+    } finally {
+      setGradEnabled(true)
+    }
+  }
+
+  private computeGradNorm(): number {
+    let count = 0
+    for (const p of this._allParams) {
+      if (p.grad) {
+        count++
+      }
+    }
+    // Computing the actual L2 norm requires GPU readback of all grad tensors,
+    // which would be expensive. Return count of params with grads as a proxy
+    // indicator that gradients are flowing. Full grad norm readback can be
+    // added later if needed for debugging.
+    return count > 0 ? count : 0
+  }
+
   async train(
     onMetrics: (m: TrainingMetrics) => void,
     onSample: (text: string) => void,
   ): Promise<void> {
-    if (!this.params || !this.optimizer) throw new Error('Not initialized')
+    if (!this._params || !this.optimizer) throw new Error('Not initialized')
     this.running = true
 
     while (this.running) {
       const stepStart = performance.now()
 
       // Sample batch
-      const { inputs, targets } = this.sampleBatch()
+      const { inputs, targets } = this.sampleBatch(false)
       const inputTensor = await Tensor.fromU32(inputs, [this.batchSize, this.seqLen])
       const targetTensor = await Tensor.fromU32(targets, [this.batchSize * this.seqLen])
 
       // Forward
       setGradEnabled(true)
-      const logits = await transformerForward(this.params, inputTensor, this.config)
+      const logits = await transformerForward(this._params, inputTensor, this._config)
 
       // Loss
       const loss = await crossEntropy(logits, targetTensor)
@@ -108,14 +177,24 @@ export class Trainer {
       loss.dispose()
 
       this._step++
+      this._lossHistory.push(lossVal)
+
       const elapsed = (performance.now() - stepStart) / 1000
       const tokensPerSec = (this.batchSize * this.seqLen) / elapsed
 
-      onMetrics({
+      const metrics: TrainingMetrics = {
         step: this._step,
         loss: lossVal,
         tokensPerSec,
-      })
+        learningRate: this.lr,
+      }
+
+      // Validation loss every 50 steps
+      if (this._step % 50 === 0) {
+        metrics.valLoss = await this.computeValLoss()
+      }
+
+      onMetrics(metrics)
 
       // Generate sample every 10 steps
       if (this._step % 10 === 0) {
@@ -128,31 +207,30 @@ export class Trainer {
     }
   }
 
-  async generateSample(maxTokens: number): Promise<string> {
-    if (!this.params || !this.tokenizer) return ''
+  async generateSample(maxTokens: number, temperature = 0.8): Promise<string> {
+    if (!this._params || !this._tokenizer) return ''
 
     setGradEnabled(false)
     try {
       // Start with a random character
-      const startIdx = Math.floor(Math.random() * this.tokenizer.vocabSize)
+      const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
       const generated: number[] = [startIdx]
 
       for (let i = 0; i < maxTokens; i++) {
         // Take last blockSize tokens
-        const contextLen = Math.min(generated.length, this.config.blockSize)
+        const contextLen = Math.min(generated.length, this._config.blockSize)
         const context = generated.slice(-contextLen)
         const inputIds = new Uint32Array(context)
         const inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
 
-        const logits = await transformerForward(this.params!, inputTensor, this.config)
+        const logits = await transformerForward(this._params!, inputTensor, this._config)
         const logitsArr = await logits.toArray()
 
         // Get last token logits
-        const lastOffset = (contextLen - 1) * this.config.vocabSize
-        const lastLogits = logitsArr.slice(lastOffset, lastOffset + this.config.vocabSize)
+        const lastOffset = (contextLen - 1) * this._config.vocabSize
+        const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
 
-        // Temperature sampling (temperature=0.8)
-        const temperature = 0.8
+        // Temperature sampling
         const scaledLogits = lastLogits.map((l: number) => l / temperature)
         const maxLogit = Math.max(...scaledLogits)
         const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
@@ -175,7 +253,7 @@ export class Trainer {
         logits.dispose()
       }
 
-      return this.tokenizer.decode(generated)
+      return this._tokenizer.decode(generated)
     } finally {
       setGradEnabled(true)
     }
@@ -183,9 +261,5 @@ export class Trainer {
 
   stop(): void {
     this.running = false
-  }
-
-  get step(): number {
-    return this._step
   }
 }

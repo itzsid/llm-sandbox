@@ -263,3 +263,66 @@ export function getAllParams(params: TransformerParams): Tensor[] {
   }
   return all
 }
+
+export async function serializeParams(
+  params: TransformerParams,
+): Promise<Record<string, { shape: number[]; data: Float32Array }>> {
+  const result: Record<string, { shape: number[]; data: Float32Array }> = {}
+  result['tokenEmbed'] = { shape: [...params.tokenEmbed.shape], data: await params.tokenEmbed.toArray() }
+  result['posEmbed'] = { shape: [...params.posEmbed.shape], data: await params.posEmbed.toArray() }
+  for (let i = 0; i < params.layers.length; i++) {
+    const layer = params.layers[i]
+    for (const [key, tensor] of Object.entries(layer) as [string, Tensor][]) {
+      result[`layers.${i}.${key}`] = { shape: [...tensor.shape], data: await tensor.toArray() }
+    }
+  }
+  result['lnFinalGamma'] = { shape: [...params.lnFinalGamma.shape], data: await params.lnFinalGamma.toArray() }
+  result['lnFinalBeta'] = { shape: [...params.lnFinalBeta.shape], data: await params.lnFinalBeta.toArray() }
+  result['lmHead'] = { shape: [...params.lmHead.shape], data: await params.lmHead.toArray() }
+  return result
+}
+
+export async function deserializeParams(
+  serialized: Record<string, { shape: number[]; data: Float32Array }>,
+  config: TransformerConfig,
+): Promise<TransformerParams> {
+  const tokenEmbed = await Tensor.create(
+    serialized['tokenEmbed'].data,
+    serialized['tokenEmbed'].shape,
+    { requiresGrad: true },
+  )
+  const posEmbed = await Tensor.create(
+    serialized['posEmbed'].data,
+    serialized['posEmbed'].shape,
+    { requiresGrad: true },
+  )
+  const layers: LayerParams[] = []
+  for (let i = 0; i < config.nLayers; i++) {
+    const layerKeys = [
+      'lnAttnGamma', 'lnAttnBeta', 'Wq', 'Wk', 'Wv', 'Wo',
+      'lnFFGamma', 'lnFFBeta', 'W1', 'b1', 'W2', 'b2',
+    ] as const
+    const layer: Record<string, Tensor> = {}
+    for (const key of layerKeys) {
+      const s = serialized[`layers.${i}.${key}`]
+      layer[key] = await Tensor.create(s.data, s.shape, { requiresGrad: true })
+    }
+    layers.push(layer as unknown as LayerParams)
+  }
+  const lnFinalGamma = await Tensor.create(
+    serialized['lnFinalGamma'].data,
+    serialized['lnFinalGamma'].shape,
+    { requiresGrad: true },
+  )
+  const lnFinalBeta = await Tensor.create(
+    serialized['lnFinalBeta'].data,
+    serialized['lnFinalBeta'].shape,
+    { requiresGrad: true },
+  )
+  const lmHead = await Tensor.create(
+    serialized['lmHead'].data,
+    serialized['lmHead'].shape,
+    { requiresGrad: true },
+  )
+  return { tokenEmbed, posEmbed, layers, lnFinalGamma, lnFinalBeta, lmHead }
+}
