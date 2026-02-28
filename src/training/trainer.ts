@@ -67,7 +67,7 @@ export class Trainer {
     config: TransformerConfig,
     step: number,
     lossHistory: number[],
-    vocab: string[],
+    _vocab: string[],
     text: string,
   ): Promise<void> {
     this._tokenizer = new CharTokenizer()
@@ -123,20 +123,6 @@ export class Trainer {
     } finally {
       setGradEnabled(true)
     }
-  }
-
-  private computeGradNorm(): number {
-    let count = 0
-    for (const p of this._allParams) {
-      if (p.grad) {
-        count++
-      }
-    }
-    // Computing the actual L2 norm requires GPU readback of all grad tensors,
-    // which would be expensive. Return count of params with grads as a proxy
-    // indicator that gradients are flowing. Full grad norm readback can be
-    // added later if needed for debugging.
-    return count > 0 ? count : 0
   }
 
   async train(

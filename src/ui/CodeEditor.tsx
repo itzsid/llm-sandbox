@@ -3,10 +3,8 @@ import { highlightJSON } from './code-highlight'
 import {
   type ModelConfig,
   type ConfigError,
-  validateConfig,
   estimateParamCount,
   configToText,
-  textToConfig,
   PRESETS,
 } from '../model/schema'
 

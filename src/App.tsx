@@ -26,7 +26,7 @@ function App() {
   const [configText, setConfigText] = useState<string>(() => configToText(PRESETS.nano))
   const [configErrors, setConfigErrors] = useState<ConfigError[]>([])
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
-  const [trainingActive, setTrainingActive] = useState(false)
+  const [, setTrainingActive] = useState(false)
 
   const paramCount = useMemo(() => estimateParamCount(modelConfig), [modelConfig])
 
