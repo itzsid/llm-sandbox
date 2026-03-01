@@ -1,6 +1,7 @@
 import type React from 'react'
 import type { VisualNode } from './types'
 import type { ModelConfig } from '../../model/schema'
+import { estimateParamCount } from '../../model/schema'
 
 interface NodeInspectorProps {
   node: VisualNode | null
@@ -276,12 +277,42 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({ node, config, onCh
     }
   }
 
+  // Compute per-layer params for transformer blocks
+  const totalParams = estimateParamCount(config)
+  const layerParams = node.type === 'transformer_block' && node.layerIndex !== undefined
+    ? (() => {
+        const layer = config.layers[node.layerIndex]
+        if (!layer) return 0
+        const d = layer.dModel
+        const ff = layer.dFF
+        // Self-attention + LayerNorms + FFN
+        return 4 * d * d + 4 * d + 2 * d + d * ff + ff + ff * d + d + 2 * d
+      })()
+    : 0
+  const layerPct = totalParams > 0 ? ((layerParams / totalParams) * 100).toFixed(1) : '0'
+
   return (
     <div style={inspectorStyles.container}>
       <div style={inspectorStyles.heading}>{node.label}</div>
       <div style={inspectorStyles.typeLabel}>{node.type.replace(/_/g, ' ')}</div>
       <div style={inspectorStyles.divider} />
       {renderFields()}
+
+      {/* Parameter Budget */}
+      {node.type === 'transformer_block' && layerParams > 0 && (
+        <>
+          <div style={inspectorStyles.divider} />
+          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+            Parameter Budget
+          </div>
+          <div style={{ fontSize: 12, color: '#e0e0e0' }}>
+            {layerParams.toLocaleString()} params
+          </div>
+          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+            {layerPct}% of total ({totalParams.toLocaleString()})
+          </div>
+        </>
+      )}
     </div>
   )
 }

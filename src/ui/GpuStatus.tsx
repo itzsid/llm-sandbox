@@ -16,7 +16,15 @@ export function GpuStatus() {
     return (
       <div className="gpu-status gpu-error">
         <span className="status-dot red" />
-        GPU: {error}
+        <span>GPU: {error}</span>
+        <a
+          href="https://caniuse.com/webgpu"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#64b5f6', fontSize: '0.75rem', marginLeft: '0.5rem' }}
+        >
+          Check browser support
+        </a>
       </div>
     )
   }

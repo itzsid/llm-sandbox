@@ -49,11 +49,12 @@ function makeNode(
   }
 }
 
-function makeEdge(fromNodeId: string, toNodeId: string): VisualEdge {
+function makeEdge(fromNodeId: string, toNodeId: string, label?: string): VisualEdge {
   return {
     id: `${fromNodeId}:bottom->${toNodeId}:top`,
     from: `${fromNodeId}:bottom`,
     to: `${toNodeId}:top`,
+    label,
   }
 }
 
@@ -87,7 +88,7 @@ export function configToGraph(config: ModelConfig): VisualGraph {
     dModel,
   })
   nodes.push(tokenEmbNode)
-  edges.push(makeEdge('input', 'token_embedding'))
+  edges.push(makeEdge('input', 'token_embedding', `[B, T]`))
   y += NODE_HEIGHT_NORMAL + VERTICAL_SPACING
 
   // 3. Positional Embedding
@@ -96,13 +97,13 @@ export function configToGraph(config: ModelConfig): VisualGraph {
     dModel,
   })
   nodes.push(posEmbNode)
-  edges.push(makeEdge('token_embedding', 'pos_embedding'))
+  edges.push(makeEdge('token_embedding', 'pos_embedding', `[B, T, ${dModel}]`))
   y += NODE_HEIGHT_NORMAL + VERTICAL_SPACING
 
   // 4. Add (combine token + pos embeddings)
   const addNode = makeNode('add', 'add', 'Add', y)
   nodes.push(addNode)
-  edges.push(makeEdge('pos_embedding', 'add'))
+  edges.push(makeEdge('pos_embedding', 'add', `[B, T, ${dModel}]`))
   y += NODE_HEIGHT_NORMAL + VERTICAL_SPACING
 
   // 5. Transformer Blocks
@@ -122,7 +123,7 @@ export function configToGraph(config: ModelConfig): VisualGraph {
       index
     )
     nodes.push(blockNode)
-    edges.push(makeEdge(prevNodeId, blockId))
+    edges.push(makeEdge(prevNodeId, blockId, `[B, T, ${layer.dModel}]`))
     prevNodeId = blockId
     y += NODE_HEIGHT_BLOCK + VERTICAL_SPACING
   })
@@ -130,7 +131,7 @@ export function configToGraph(config: ModelConfig): VisualGraph {
   // 6. Final LayerNorm
   const lnNode = makeNode('layernorm', 'layernorm', 'Layer Norm', y, { dModel })
   nodes.push(lnNode)
-  edges.push(makeEdge(prevNodeId, 'layernorm'))
+  edges.push(makeEdge(prevNodeId, 'layernorm', `[B, T, ${dModel}]`))
   y += NODE_HEIGHT_NORMAL + VERTICAL_SPACING
 
   // 7. LM Head (linear projection back to vocab)
@@ -139,13 +140,13 @@ export function configToGraph(config: ModelConfig): VisualGraph {
     vocabSize,
   })
   nodes.push(lmHeadNode)
-  edges.push(makeEdge('layernorm', 'lm_head'))
+  edges.push(makeEdge('layernorm', 'lm_head', `[B, T, ${dModel}]`))
   y += NODE_HEIGHT_NORMAL + VERTICAL_SPACING
 
   // 8. Output node
   const outputNode = makeNode('output', 'output', 'Output', y)
   nodes.push(outputNode)
-  edges.push(makeEdge('lm_head', 'output'))
+  edges.push(makeEdge('lm_head', 'output', `[B, T, ${vocabSize}]`))
 
   return { nodes, edges }
 }

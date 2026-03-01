@@ -40,6 +40,10 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({ edge, nodes }) => {
   // Arrow dot at target
   const dotR = 3
 
+  // Midpoint of bezier for label placement
+  const midX = (sx + tx) / 2
+  const midY = (sy + ty) / 2
+
   return (
     <g>
       <path
@@ -56,6 +60,19 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({ edge, nodes }) => {
         r={dotR}
         fill="#555"
       />
+      {/* Dimension label at midpoint */}
+      {edge.label && (
+        <text
+          x={midX + 8}
+          y={midY}
+          fill="#666"
+          fontSize={9}
+          fontFamily="-apple-system, sans-serif"
+          dominantBaseline="central"
+        >
+          {edge.label}
+        </text>
+      )}
     </g>
   )
 }

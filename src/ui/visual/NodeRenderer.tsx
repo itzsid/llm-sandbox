@@ -7,6 +7,19 @@ interface NodeRendererProps {
   selected: boolean
   onMouseDown: (e: React.MouseEvent, nodeId: string) => void
   onRemove?: (nodeId: string) => void // only for transformer blocks
+  onDoubleClick?: (nodeId: string) => void
+  editing?: boolean
+  editValues?: Record<string, string | number>
+  onEditChange?: (field: string, value: string) => void
+  onEditCommit?: () => void
+}
+
+// Parse hex color to rgba with alpha
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 export const NodeRenderer: React.FC<NodeRendererProps> = ({
@@ -14,9 +27,16 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   selected,
   onMouseDown,
   onRemove,
+  onDoubleClick,
+  editing,
+  editValues,
+  onEditChange,
+  onEditCommit,
 }) => {
   const [hovered, setHovered] = useState(false)
 
+  // Subtle color tint for node body
+  const tintColor = hexToRgba(node.color, 0.08)
   const bgColor = selected ? '#2a2a2a' : '#1e1e1e'
   const strokeColor = selected ? node.color : '#444'
   const showRemove = onRemove && (hovered || selected)
@@ -41,6 +61,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
       transform={`translate(${node.x}, ${node.y})`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onDoubleClick={() => onDoubleClick?.(node.id)}
       style={{ cursor: 'grab' }}
     >
       {/* Main body — rounded rectangle */}
@@ -55,14 +76,24 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         onMouseDown={(e) => onMouseDown(e, node.id)}
       />
 
+      {/* Subtle color tint overlay */}
+      <rect
+        width={node.width}
+        height={node.height}
+        rx={8}
+        ry={8}
+        fill={tintColor}
+        pointerEvents="none"
+      />
+
       {/* Color accent — left border strip */}
       <rect
         x={0}
         y={4}
-        width={3}
+        width={4}
         height={node.height - 8}
-        rx={1.5}
-        ry={1.5}
+        rx={2}
+        ry={2}
         fill={node.color}
         pointerEvents="none"
       />
@@ -144,6 +175,35 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
             x
           </text>
         </g>
+      )}
+
+      {/* Inline editing via foreignObject */}
+      {editing && editValues && onEditChange && onEditCommit && node.type === 'transformer_block' && (
+        <foreignObject x={10} y={node.height / 2 - 10} width={node.width - 20} height={30}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {Object.entries(editValues).map(([key, val]) => (
+              <input
+                key={key}
+                type="number"
+                value={val}
+                onChange={(e) => onEditChange(key, e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onEditCommit() }}
+                style={{
+                  width: '60px',
+                  padding: '2px 4px',
+                  background: '#2a2a2a',
+                  border: '1px solid #4caf50',
+                  borderRadius: '3px',
+                  color: '#e0e0e0',
+                  fontSize: '11px',
+                  fontFamily: "'SF Mono', monospace",
+                  outline: 'none',
+                }}
+                placeholder={key}
+              />
+            ))}
+          </div>
+        </foreignObject>
       )}
     </g>
   )

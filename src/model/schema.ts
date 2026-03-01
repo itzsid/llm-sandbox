@@ -23,6 +23,7 @@ export interface LayerConfig {
 export interface ConfigError {
   path: string    // e.g. "blockSize", "layers[0].dModel"
   message: string
+  suggestion?: string
 }
 
 // ---- Validation ----
@@ -44,9 +45,9 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
 
   // blockSize: 8-1024
   if (typeof config.blockSize !== 'number' || !Number.isInteger(config.blockSize)) {
-    errors.push({ path: 'blockSize', message: 'blockSize must be an integer' })
+    errors.push({ path: 'blockSize', message: 'blockSize must be an integer', suggestion: 'Try 64, 128, or 256' })
   } else if (config.blockSize < 8 || config.blockSize > 1024) {
-    errors.push({ path: 'blockSize', message: 'blockSize must be between 8 and 1024' })
+    errors.push({ path: 'blockSize', message: 'blockSize must be between 8 and 1024', suggestion: 'Common values: 64, 128, 256, 512' })
   }
 
   // layers: 1-12
@@ -56,7 +57,7 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
   }
 
   if (config.layers.length < 1 || config.layers.length > 12) {
-    errors.push({ path: 'layers', message: 'Must have between 1 and 12 layers' })
+    errors.push({ path: 'layers', message: 'Must have between 1 and 12 layers', suggestion: 'Start with 2-4 layers for small models' })
   }
 
   // All layers must have the same dModel
@@ -74,23 +75,23 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
 
     // dModel: 16-512
     if (typeof layer.dModel !== 'number' || !Number.isInteger(layer.dModel)) {
-      errors.push({ path: `${prefix}.dModel`, message: 'dModel must be an integer' })
+      errors.push({ path: `${prefix}.dModel`, message: 'dModel must be an integer', suggestion: 'Try 64, 128, or 256' })
     } else if (layer.dModel < 16 || layer.dModel > 512) {
-      errors.push({ path: `${prefix}.dModel`, message: 'dModel must be between 16 and 512' })
+      errors.push({ path: `${prefix}.dModel`, message: 'dModel must be between 16 and 512', suggestion: 'Common values: 64, 128, 256' })
     }
 
     // nHeads: 1-16
     if (typeof layer.nHeads !== 'number' || !Number.isInteger(layer.nHeads)) {
-      errors.push({ path: `${prefix}.nHeads`, message: 'nHeads must be an integer' })
+      errors.push({ path: `${prefix}.nHeads`, message: 'nHeads must be an integer', suggestion: 'Try 2, 4, or 8' })
     } else if (layer.nHeads < 1 || layer.nHeads > 16) {
-      errors.push({ path: `${prefix}.nHeads`, message: 'nHeads must be between 1 and 16' })
+      errors.push({ path: `${prefix}.nHeads`, message: 'nHeads must be between 1 and 16', suggestion: 'Common values: 2, 4, 8' })
     }
 
     // dFF: 16-2048
     if (typeof layer.dFF !== 'number' || !Number.isInteger(layer.dFF)) {
-      errors.push({ path: `${prefix}.dFF`, message: 'dFF must be an integer' })
+      errors.push({ path: `${prefix}.dFF`, message: 'dFF must be an integer', suggestion: 'Typically 4x dModel (e.g. 512 for dModel=128)' })
     } else if (layer.dFF < 16 || layer.dFF > 2048) {
-      errors.push({ path: `${prefix}.dFF`, message: 'dFF must be between 16 and 2048' })
+      errors.push({ path: `${prefix}.dFF`, message: 'dFF must be between 16 and 2048', suggestion: 'Typically 4x dModel' })
     }
 
     // dModel must be divisible by nHeads
@@ -102,9 +103,15 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
       layer.nHeads > 0 &&
       layer.dModel % layer.nHeads !== 0
     ) {
+      // Suggest valid nHeads values
+      const validHeads = []
+      for (let h = 1; h <= Math.min(16, layer.dModel); h++) {
+        if (layer.dModel % h === 0) validHeads.push(h)
+      }
       errors.push({
         path: `${prefix}.nHeads`,
         message: `dModel (${layer.dModel}) must be divisible by nHeads (${layer.nHeads})`,
+        suggestion: `Valid nHeads for dModel=${layer.dModel}: ${validHeads.join(', ')}`,
       })
     }
 

@@ -8,13 +8,29 @@ import type { ModelConfig } from '../model/schema'
 import type { Dataset } from '../data/datasets'
 import type { Checkpoint } from '../storage/checkpoint'
 
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
+  if (count >= 1_000) return `${(count / 1_000).toFixed(0)}K`
+  return String(count)
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 interface TrainingPanelProps {
   config: ModelConfig
   dataset: Dataset | null
   onTrainingStateChange: (active: boolean) => void
+  trainerRef?: React.MutableRefObject<Trainer | null>
 }
 
-export function TrainingPanel({ config, dataset, onTrainingStateChange }: TrainingPanelProps) {
+export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerRef: externalTrainerRef }: TrainingPanelProps) {
   const [status, setStatus] = useState<'idle' | 'initializing' | 'training' | 'stopped'>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
@@ -24,14 +40,33 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
   const [error, setError] = useState<string | null>(null)
   const [temperature, setTemperature] = useState(0.8)
   const [maxTokens, setMaxTokens] = useState(100)
+  const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [trainingStartTime, setTrainingStartTime] = useState<number | null>(null)
+  const [elapsedTime, setElapsedTime] = useState<string>('')
   const trainerRef = useRef<Trainer | null>(null)
+
+  // Sync trainer to external ref
+  const setTrainer = useCallback((trainer: Trainer | null) => {
+    trainerRef.current = trainer
+    if (externalTrainerRef) externalTrainerRef.current = trainer
+  }, [externalTrainerRef])
 
   const isTraining = status === 'training'
 
   useEffect(() => {
     onTrainingStateChange(isTraining)
   }, [isTraining, onTrainingStateChange])
+
+  // Elapsed time ticker
+  useEffect(() => {
+    if (!isTraining || !trainingStartTime) return
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - trainingStartTime) / 1000)
+      setElapsedTime(formatElapsed(elapsed))
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [isTraining, trainingStartTime])
 
   const handleStart = useCallback(async () => {
     if (!dataset) {
@@ -44,10 +79,11 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
 
       const legacyConfig = toLegacyConfig(config)
       const trainer = new Trainer(legacyConfig)
-      trainerRef.current = trainer
+      setTrainer(trainer)
       await trainer.init(dataset.text)
 
       setStatus('training')
+      setTrainingStartTime(Date.now())
       await trainer.train(
         (m) => {
           setMetrics(m)
@@ -78,14 +114,14 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
     if (!trainer || !trainer.params) return
     setGenerating(true)
     try {
-      const text = await trainer.generateSample(maxTokens, temperature)
+      const text = await trainer.generateSample(maxTokens, temperature, prompt || undefined)
       setSampleText(text)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setGenerating(false)
     }
-  }, [temperature, maxTokens])
+  }, [temperature, maxTokens, prompt])
 
   const handleCheckpointLoad = useCallback(async (checkpoint: Checkpoint) => {
     if (!dataset) {
@@ -98,7 +134,7 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
 
       const legacyConfig = checkpoint.config
       const trainer = new Trainer(legacyConfig)
-      trainerRef.current = trainer
+      setTrainer(trainer)
       await trainer.loadFromCheckpoint(
         checkpoint.params,
         checkpoint.config,
@@ -170,33 +206,33 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
               <span className="metric-label">LR</span>
               <span className="metric-value">{metrics.learningRate.toExponential(1)}</span>
             </div>
+            <div className="metric">
+              <span className="metric-label">Tokens Trained</span>
+              <span className="metric-value">{formatTokenCount(metrics.step * 4 * config.blockSize)}</span>
+            </div>
+            {elapsedTime && (
+              <div className="metric">
+                <span className="metric-label">Elapsed</span>
+                <span className="metric-value">{elapsedTime}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {error && <div className="error-msg">{error}</div>}
 
-      {(lossHistory.length > 1 || valLossHistory.length > 1) && (
-        <div className="charts-grid">
-          {lossHistory.length > 1 && (
-            <MetricsChart
-              data={lossHistory}
-              label="Training Loss"
-              color="#4caf50"
-              height={140}
-              formatValue={(v) => v.toFixed(2)}
-            />
-          )}
-          {valLossHistory.length > 1 && (
-            <MetricsChart
-              data={valLossHistory}
-              label="Validation Loss"
-              color="#2196f3"
-              height={140}
-              formatValue={(v) => v.toFixed(2)}
-            />
-          )}
-        </div>
+      {lossHistory.length > 1 && (
+        <MetricsChart
+          data={lossHistory}
+          label="Train Loss"
+          color="#4caf50"
+          height={160}
+          formatValue={(v) => v.toFixed(2)}
+          secondaryData={valLossHistory.length > 1 ? valLossHistory : undefined}
+          secondaryColor="#2196f3"
+          secondaryLabel="Val Loss"
+        />
       )}
 
       {tokensPerSecHistory.length > 1 && (
@@ -215,6 +251,26 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange }: Traini
           {/* Generation controls */}
           <div className="gen-controls">
             <h3>Generation</h3>
+            <div style={{ marginBottom: '0.75rem' }}>
+              <input
+                type="text"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Prompt (optional) — leave empty for random start"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  background: '#222',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  color: '#e0e0e0',
+                  fontSize: '0.85rem',
+                  fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
             <div className="gen-sliders">
               <div className="gen-slider">
                 <label>Temperature: {temperature.toFixed(1)}</label>

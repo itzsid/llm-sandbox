@@ -104,6 +104,10 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
 
+  // Double-click inline editing
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [editValues, setEditValues] = useState<Record<string, string | number>>({})
+
   // Dragging state
   const [dragging, setDragging] = useState<{
     type: 'node' | 'pan'
@@ -218,6 +222,40 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
     setDragging(null)
   }, [])
 
+  // --- Double-click to edit ---
+  const handleDoubleClick = useCallback((nodeId: string) => {
+    const node = graph.nodes.find((n) => n.id === nodeId)
+    if (!node || node.type !== 'transformer_block') return
+    setEditingNodeId(nodeId)
+    setEditValues({
+      dModel: node.params?.dModel ?? 128,
+      nHeads: node.params?.nHeads ?? 4,
+      dFF: node.params?.dFF ?? 512,
+    })
+  }, [graph])
+
+  const handleEditChange = useCallback((field: string, value: string) => {
+    setEditValues((prev) => ({ ...prev, [field]: value }))
+  }, [])
+
+  const handleEditCommit = useCallback(() => {
+    if (!editingNodeId) return
+    const node = graph.nodes.find((n) => n.id === editingNodeId)
+    if (!node || node.layerIndex === undefined) return
+
+    const newLayers = config.layers.map((layer, i) => {
+      if (i !== node.layerIndex) return layer
+      return {
+        ...layer,
+        dModel: parseInt(String(editValues.dModel)) || layer.dModel,
+        nHeads: parseInt(String(editValues.nHeads)) || layer.nHeads,
+        dFF: parseInt(String(editValues.dFF)) || layer.dFF,
+      }
+    })
+    onChange({ ...config, layers: newLayers })
+    setEditingNodeId(null)
+  }, [editingNodeId, editValues, graph, config, onChange])
+
   // --- Add / Remove layers ---
   const handleAddLayer = useCallback(() => {
     // Copy params from last layer, or use defaults
@@ -326,6 +364,11 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
                   onRemove={
                     node.type === 'transformer_block' ? handleRemoveNode : undefined
                   }
+                  onDoubleClick={handleDoubleClick}
+                  editing={editingNodeId === node.id}
+                  editValues={editingNodeId === node.id ? editValues : undefined}
+                  onEditChange={handleEditChange}
+                  onEditCommit={handleEditCommit}
                 />
               ))}
             </g>

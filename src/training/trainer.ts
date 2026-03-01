@@ -198,14 +198,20 @@ export class Trainer {
     }
   }
 
-  async generateSample(maxTokens: number, temperature = 0.8): Promise<string> {
+  async generateSample(maxTokens: number, temperature = 0.8, prompt?: string): Promise<string> {
     if (!this._params || !this._tokenizer) return ''
 
     setGradEnabled(false)
     try {
-      // Start with a random character
-      const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
-      const generated: number[] = [startIdx]
+      // Start with prompt tokens if provided, otherwise random character
+      let generated: number[]
+      if (prompt && prompt.length > 0) {
+        const encoded = this._tokenizer.encode(prompt)
+        generated = Array.from(encoded)
+      } else {
+        const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
+        generated = [startIdx]
+      }
 
       for (let i = 0; i < maxTokens; i++) {
         // Take last blockSize tokens
@@ -242,6 +248,72 @@ export class Trainer {
 
         inputTensor.dispose()
         logits.dispose()
+      }
+
+      return this._tokenizer.decode(generated)
+    } finally {
+      setGradEnabled(true)
+    }
+  }
+
+  async generateStreaming(
+    maxTokens: number,
+    temperature: number,
+    onToken: (text: string) => void,
+    prompt?: string,
+  ): Promise<string> {
+    if (!this._params || !this._tokenizer) return ''
+
+    setGradEnabled(false)
+    try {
+      let generated: number[]
+      if (prompt && prompt.length > 0) {
+        const encoded = this._tokenizer.encode(prompt)
+        generated = Array.from(encoded)
+      } else {
+        const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
+        generated = [startIdx]
+      }
+
+      for (let i = 0; i < maxTokens; i++) {
+        const contextLen = Math.min(generated.length, this._config.blockSize)
+        const context = generated.slice(-contextLen)
+        const inputIds = new Uint32Array(context)
+        const inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
+
+        const logits = await transformerForward(this._params!, inputTensor, this._config)
+        const logitsArr = await logits.toArray()
+
+        const lastOffset = (contextLen - 1) * this._config.vocabSize
+        const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
+
+        const scaledLogits = lastLogits.map((l: number) => l / temperature)
+        const maxLogit = Math.max(...scaledLogits)
+        const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
+        const sumExps = exps.reduce((a: number, b: number) => a + b, 0)
+        const probs = exps.map((e: number) => e / sumExps)
+
+        let r = Math.random()
+        let nextToken = 0
+        for (let j = 0; j < probs.length; j++) {
+          r -= probs[j]
+          if (r <= 0) {
+            nextToken = j
+            break
+          }
+        }
+        generated.push(nextToken)
+
+        inputTensor.dispose()
+        logits.dispose()
+
+        // Emit partial result
+        onToken(this._tokenizer!.decode(generated))
+
+        // Yield to UI every few tokens
+        if (i % 3 === 0) {
+          await new Promise((r) => setTimeout(r, 0))
+        }
       }
 
       return this._tokenizer.decode(generated)

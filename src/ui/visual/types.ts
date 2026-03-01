@@ -29,6 +29,7 @@ export interface VisualEdge {
   id: string
   from: string // port id: "nodeId:bottom"
   to: string // port id: "nodeId:top"
+  label?: string // dimension annotation e.g. "[B, T, 128]"
 }
 
 export interface VisualGraph {

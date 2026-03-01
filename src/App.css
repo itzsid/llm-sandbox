@@ -2,7 +2,66 @@
   max-width: 1100px;
   margin: 0 auto;
   padding: 1.5rem;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* Reusable button system */
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: #4caf50;
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #45a049;
+}
+.btn-secondary {
+  background: #555;
+  color: #ccc;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #666;
+}
+.btn-danger {
+  background: #f44336;
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #d32f2f;
+}
+.btn-blue {
+  background: #2196f3;
+  color: #fff;
+}
+.btn-blue:hover:not(:disabled) {
+  background: #1976d2;
+}
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 3px;
+}
+.btn-outline {
+  background: transparent;
+  border: 1px solid #555;
+  color: #aaa;
+}
+.btn-outline:hover:not(:disabled) {
+  border-color: #888;
+  color: #ccc;
 }
 
 .header {
@@ -40,39 +99,58 @@
 .status-dot.yellow { background: #ff9800; }
 .status-dot.red { background: #f44336; }
 
-/* Tab Bar */
-.tab-bar {
+/* Config Section */
+.config-section {
+  margin-bottom: 0;
+}
+
+/* Config Summary Bar */
+.config-summary {
   display: flex;
-  gap: 0;
-  margin-bottom: 1.5rem;
-  border-bottom: 2px solid #333;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin: 1.5rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.tab-btn {
-  padding: 0.6rem 1.5rem;
-  border: none;
-  background: transparent;
+.config-summary-items {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.config-summary-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.config-summary-label {
+  font-size: 0.65rem;
   color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-summary-value {
   font-size: 0.9rem;
-  font-family: inherit;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  transition: color 0.15s, border-color 0.15s;
+  color: #e0e0e0;
+  font-weight: 600;
 }
 
-.tab-btn:hover:not(:disabled) {
-  color: #ccc;
+.config-summary-errors .config-summary-value {
+  color: #ff8a80;
 }
 
-.tab-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.tab-active {
-  color: #4caf50;
-  border-bottom-color: #4caf50;
+/* Training Section */
+.training-section {
+  border-top: 1px solid #333;
+  padding-top: 1.5rem;
 }
 
 /* Sub-Tab Bar (Code / Visual) */
@@ -324,7 +402,70 @@
   gap: 1rem;
 }
 
-/* Responsive: 2-column on wide screens */
+/* Responsive: mobile (< 768px) */
+@media (max-width: 767px) {
+  .app {
+    padding: 0.75rem;
+  }
+
+  .header h1 {
+    font-size: 1.2rem;
+  }
+
+  .config-summary {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+  }
+
+  .config-summary-items {
+    gap: 0.75rem;
+  }
+
+  .metrics-strip {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metrics {
+    gap: 0.5rem;
+  }
+
+  .metric-value {
+    font-size: 1.1rem;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gen-sliders {
+    flex-direction: column;
+  }
+
+  /* Hide visual editor on mobile */
+  .sub-tab-btn:nth-child(2) {
+    display: none;
+  }
+
+  .sample-text {
+    font-size: 0.8rem;
+    max-height: 150px;
+  }
+}
+
+/* Responsive: tablet (768-1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .training-layout {
+    flex-direction: column;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Responsive: desktop (1024px+) */
 @media (min-width: 1024px) {
   .app {
     max-width: 1200px;
@@ -343,4 +484,16 @@
     width: 350px;
     flex-shrink: 0;
   }
+}
+
+/* Disabled sub-tab styling */
+.sub-tab-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Monospace contexts - keep monospace for code/data areas */
+.sample-text,
+.error-msg code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }

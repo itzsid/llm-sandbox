@@ -6,6 +6,9 @@ export interface MetricsChartProps {
   color: string
   height?: number
   formatValue?: (v: number) => string
+  secondaryData?: number[]
+  secondaryColor?: string
+  secondaryLabel?: string
 }
 
 export function MetricsChart({
@@ -14,6 +17,9 @@ export function MetricsChart({
   color,
   height = 120,
   formatValue = (v) => v.toFixed(2),
+  secondaryData,
+  secondaryColor = '#2196f3',
+  secondaryLabel,
 }: MetricsChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -34,9 +40,10 @@ export function MetricsChart({
     // Clear
     ctx.clearRect(0, 0, W, H)
 
-    // Compute Y range with padding
-    const minVal = Math.min(...data)
-    const maxVal = Math.max(...data)
+    // Compute Y range with padding, including secondary data if present
+    const allValues = secondaryData && secondaryData.length > 0 ? [...data, ...secondaryData] : data
+    const minVal = Math.min(...allValues)
+    const maxVal = Math.max(...allValues)
     const yPad = Math.max((maxVal - minVal) * 0.1, 0.01)
     const yMin = minVal - yPad
     const yMax = maxVal + yPad
@@ -107,7 +114,73 @@ export function MetricsChart({
     ctx.arc(toX(lastIdx), toY(data[lastIdx]), 3, 0, Math.PI * 2)
     ctx.fillStyle = color
     ctx.fill()
-  }, [data, color, formatValue])
+
+    // Draw secondary data series if present
+    if (secondaryData && secondaryData.length >= 2) {
+      const sr = parseInt(secondaryColor.slice(1, 3), 16)
+      const sg = parseInt(secondaryColor.slice(3, 5), 16)
+      const sb = parseInt(secondaryColor.slice(5, 7), 16)
+
+      // Secondary line scaled to same axis but with its own X spacing
+      const toX2 = (i: number) => pad.left + (i / (secondaryData.length - 1)) * plotW
+
+      // Gradient fill
+      const gradient2 = ctx.createLinearGradient(0, pad.top, 0, pad.top + plotH)
+      gradient2.addColorStop(0, `rgba(${sr}, ${sg}, ${sb}, 0.15)`)
+      gradient2.addColorStop(1, `rgba(${sr}, ${sg}, ${sb}, 0.01)`)
+
+      ctx.beginPath()
+      ctx.moveTo(toX2(0), toY(secondaryData[0]))
+      for (let i = 1; i < secondaryData.length; i++) {
+        ctx.lineTo(toX2(i), toY(secondaryData[i]))
+      }
+      ctx.lineTo(toX2(secondaryData.length - 1), pad.top + plotH)
+      ctx.lineTo(toX2(0), pad.top + plotH)
+      ctx.closePath()
+      ctx.fillStyle = gradient2
+      ctx.fill()
+
+      // Line
+      ctx.beginPath()
+      ctx.moveTo(toX2(0), toY(secondaryData[0]))
+      for (let i = 1; i < secondaryData.length; i++) {
+        ctx.lineTo(toX2(i), toY(secondaryData[i]))
+      }
+      ctx.strokeStyle = secondaryColor
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 3])
+      ctx.stroke()
+      ctx.setLineDash([])
+
+      // Secondary dot
+      const lastIdx2 = secondaryData.length - 1
+      ctx.beginPath()
+      ctx.arc(toX2(lastIdx2), toY(secondaryData[lastIdx2]), 3, 0, Math.PI * 2)
+      ctx.fillStyle = secondaryColor
+      ctx.fill()
+    }
+
+    // Legend (top-right)
+    if (secondaryLabel) {
+      const legendX = W - pad.right - 10
+      let legendY = pad.top + 12
+      ctx.textAlign = 'right'
+      ctx.font = '10px -apple-system, sans-serif'
+
+      // Primary
+      ctx.fillStyle = color
+      ctx.fillRect(legendX - 40, legendY - 4, 12, 2)
+      ctx.fillStyle = '#aaa'
+      ctx.fillText(label, legendX, legendY)
+      legendY += 14
+
+      // Secondary
+      ctx.fillStyle = secondaryColor
+      ctx.fillRect(legendX - 40, legendY - 4, 12, 2)
+      ctx.fillStyle = '#aaa'
+      ctx.fillText(secondaryLabel, legendX, legendY)
+    }
+  }, [data, color, formatValue, secondaryData, secondaryColor, secondaryLabel, label])
 
   return (
     <div className="metrics-chart-container">

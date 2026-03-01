@@ -1,4 +1,4 @@
-import { useRef, useCallback, useMemo } from 'react'
+import { useRef, useCallback, useMemo, useState } from 'react'
 import { highlightJSON } from './code-highlight'
 import {
   type ModelConfig,
@@ -13,6 +13,7 @@ interface CodeEditorProps {
   onChange: (text: string) => void
   errors: ConfigError[]
   paramCount: number
+  onShare?: () => void
 }
 
 function formatParamCount(count: number): string {
@@ -33,13 +34,62 @@ const PRESET_ENTRIES: { key: string; label: string; config: ModelConfig }[] = [
 
 // Pre-compute preset param counts for button labels
 const PRESET_LABELS: Record<string, string> = {}
+const PRESET_TOOLTIPS: Record<string, string> = {}
 for (const entry of PRESET_ENTRIES) {
   PRESET_LABELS[entry.key] = `${entry.label} (${formatParamCount(estimateParamCount(entry.config))})`
+  const l = entry.config.layers[0]
+  PRESET_TOOLTIPS[entry.key] = `${entry.config.layers.length} layers, dModel=${l.dModel}, nHeads=${l.nHeads}, dFF=${l.dFF}, blockSize=${entry.config.blockSize}`
 }
 
-export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorProps) {
+// Map error paths to approximate line numbers in the JSON text
+function mapErrorsToLines(text: string, errors: ConfigError[]): Map<number, ConfigError[]> {
+  const lineMap = new Map<number, ConfigError[]>()
+  const lines = text.split('\n')
+
+  for (const err of errors) {
+    // Try to find the line containing the error path
+    const pathParts = err.path.split('.')
+    const lastPart = pathParts[pathParts.length - 1]
+    // Search for the key in the JSON
+    let foundLine = -1
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (line.includes(`"${lastPart}"`)) {
+        // Check if it's within the right array context
+        if (err.path.includes('[')) {
+          const match = err.path.match(/\[(\d+)\]/)
+          if (match) {
+            const idx = parseInt(match[1])
+            // Count opening braces to find which block we're in
+            let braceCount = 0
+            let blockIdx = -1
+            for (let j = 0; j <= i; j++) {
+              if (lines[j].includes('{')) braceCount++
+              if (lines[j].includes('}')) braceCount--
+              if (lines[j].includes('{') && j > 0) blockIdx++
+            }
+            // Rough heuristic: skip if block index doesn't match
+            if (blockIdx >= 0 && Math.floor(blockIdx / 1) !== idx + 1) continue
+          }
+        }
+        foundLine = i
+        break
+      }
+    }
+    if (foundLine === -1) foundLine = 0
+    const existing = lineMap.get(foundLine) || []
+    existing.push(err)
+    lineMap.set(foundLine, existing)
+  }
+
+  return lineMap
+}
+
+export function CodeEditor({ value, onChange, errors, paramCount, onShare }: CodeEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const preRef = useRef<HTMLPreElement>(null)
+  const gutterRef = useRef<HTMLDivElement>(null)
+  const [shareMsg, setShareMsg] = useState<string | null>(null)
 
   // Determine which preset (if any) matches the current editor value
   const activePresetKey = useMemo(() => {
@@ -50,13 +100,17 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
     return null
   }, [value])
 
-  // Sync scroll between textarea and pre
+  // Sync scroll between textarea, pre, and gutter
   const handleScroll = useCallback(() => {
     const textarea = textareaRef.current
     const pre = preRef.current
+    const gutter = gutterRef.current
     if (textarea && pre) {
       pre.scrollTop = textarea.scrollTop
       pre.scrollLeft = textarea.scrollLeft
+    }
+    if (textarea && gutter) {
+      gutter.scrollTop = textarea.scrollTop
     }
   }, [])
 
@@ -79,6 +133,10 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
 
   // Memoize highlighted HTML
   const highlightedHTML = useMemo(() => highlightJSON(value), [value])
+
+  // Map errors to line numbers for gutter markers
+  const errorLineMap = useMemo(() => mapErrorsToLines(value, errors), [value, errors])
+  const lineCount = value.split('\n').length
 
   // Handle tab key in textarea (insert two spaces instead of focus change)
   const handleKeyDown = useCallback(
@@ -110,6 +168,7 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
               <button
                 key={entry.key}
                 style={isActive ? { ...styles.presetButton, ...styles.presetButtonActive } : styles.presetButton}
+                title={PRESET_TOOLTIPS[entry.key]}
                 onClick={() => handlePresetClick(entry.key)}
                 onMouseEnter={(e) => {
                   if (!isActive) {
@@ -129,28 +188,61 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
             )
           })}
         </div>
-        <div style={styles.paramCount}>{formatParamCount(paramCount)}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={styles.paramCount}>{formatParamCount(paramCount)}</div>
+          {onShare && (
+            <button
+              style={styles.shareButton}
+              onClick={() => {
+                onShare()
+                setShareMsg('Copied!')
+                setTimeout(() => setShareMsg(null), 2000)
+              }}
+            >
+              {shareMsg ?? 'Share'}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Editor area */}
+      {/* Editor area with gutter */}
       <div style={styles.editorWrapper}>
-        <pre
-          ref={preRef}
-          style={styles.pre}
-          dangerouslySetInnerHTML={{ __html: highlightedHTML + '\n' }}
-        />
-        <textarea
-          ref={textareaRef}
-          style={styles.textarea}
-          value={value}
-          onChange={handleChange}
-          onScroll={handleScroll}
-          onKeyDown={handleKeyDown}
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-        />
+        {/* Error gutter */}
+        <div ref={gutterRef} style={styles.gutter}>
+          {Array.from({ length: lineCount }, (_, i) => {
+            const lineErrors = errorLineMap.get(i)
+            return (
+              <div
+                key={i}
+                style={styles.gutterLine}
+                title={lineErrors ? lineErrors.map((e) => `${e.message}${e.suggestion ? `\n${e.suggestion}` : ''}`).join('\n') : undefined}
+              >
+                {lineErrors ? (
+                  <span style={styles.gutterMarker}>!</span>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ position: 'relative', flex: 1, minHeight: '300px' }}>
+          <pre
+            ref={preRef}
+            style={styles.pre}
+            dangerouslySetInnerHTML={{ __html: highlightedHTML + '\n' }}
+          />
+          <textarea
+            ref={textareaRef}
+            style={styles.textarea}
+            value={value}
+            onChange={handleChange}
+            onScroll={handleScroll}
+            onKeyDown={handleKeyDown}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+          />
+        </div>
       </div>
 
       {/* Error list */}
@@ -159,6 +251,9 @@ export function CodeEditor({ value, onChange, errors, paramCount }: CodeEditorPr
           {errors.map((err, i) => (
             <div key={i} style={styles.errorItem}>
               <span style={styles.errorPath}>{err.path}:</span> {err.message}
+              {err.suggestion && (
+                <div style={styles.errorSuggestion}>{err.suggestion}</div>
+              )}
             </div>
           ))}
         </div>
@@ -230,12 +325,34 @@ const styles: Record<string, React.CSSProperties> = {
   },
   editorWrapper: {
     position: 'relative' as const,
+    display: 'flex',
     minHeight: '300px',
     background: '#1a1a1a',
     border: '1px solid #333',
     borderBottomLeftRadius: '4px',
     borderBottomRightRadius: '4px',
     overflow: 'hidden',
+  },
+  gutter: {
+    width: '24px',
+    background: '#181818',
+    borderRight: '1px solid #333',
+    overflow: 'hidden',
+    flexShrink: 0,
+    paddingTop: '12px',
+  },
+  gutterLine: {
+    height: '19.5px', // matches lineHeight 1.5 * 13px
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '10px',
+  },
+  gutterMarker: {
+    color: '#f44336',
+    fontWeight: 'bold' as const,
+    fontSize: '11px',
+    cursor: 'help',
   },
   pre: {
     ...sharedEditorStyle,
@@ -277,5 +394,21 @@ const styles: Record<string, React.CSSProperties> = {
   errorPath: {
     color: '#ffab91',
     fontWeight: 600,
+  },
+  errorSuggestion: {
+    color: '#64b5f6',
+    fontSize: '0.75rem',
+    marginTop: '2px',
+    fontFamily: monoFont,
+  },
+  shareButton: {
+    background: '#2a2a2a',
+    border: '1px solid #444',
+    borderRadius: '12px',
+    color: '#64b5f6',
+    padding: '3px 10px',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    transition: 'border-color 0.15s, background 0.15s',
   },
 }
