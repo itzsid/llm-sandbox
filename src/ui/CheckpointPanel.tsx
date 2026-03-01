@@ -9,8 +9,16 @@ import {
   serializeParams,
   type Checkpoint,
 } from '../storage/checkpoint'
+import {
+  saveCloudCheckpoint,
+  listCloudCheckpoints,
+  loadCloudCheckpoint,
+  deleteCloudCheckpoint,
+} from '../firebase/cloudStorage'
+import type { CloudCheckpointMeta } from '../firebase/cloudStorage'
 import type { TransformerParams } from '../model/transformer'
 import type { TransformerConfig } from '../model/config'
+import type { User } from 'firebase/auth'
 
 export interface CheckpointPanelProps {
   params: TransformerParams | null
@@ -21,6 +29,7 @@ export interface CheckpointPanelProps {
   datasetId: string
   onLoad: (checkpoint: Checkpoint) => void
   disabled: boolean
+  user: User | null
 }
 
 interface CheckpointEntry {
@@ -29,6 +38,8 @@ interface CheckpointEntry {
   savedAt: number
   datasetId: string
 }
+
+type StorageTab = 'local' | 'cloud'
 
 export function CheckpointPanel({
   params,
@@ -39,12 +50,17 @@ export function CheckpointPanel({
   datasetId,
   onLoad,
   disabled,
+  user,
 }: CheckpointPanelProps) {
+  const [activeTab, setActiveTab] = useState<StorageTab>('local')
   const [checkpoints, setCheckpoints] = useState<CheckpointEntry[]>([])
+  const [cloudCheckpoints, setCloudCheckpoints] = useState<CloudCheckpointMeta[]>([])
   const [saveName, setSaveName] = useState('')
   const [showSaveInput, setShowSaveInput] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState<string | null>(null)
+  const [cloudSaving, setCloudSaving] = useState(false)
+  const [cloudLoading, setCloudLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const refreshList = useCallback(async () => {
@@ -56,9 +72,32 @@ export function CheckpointPanel({
     }
   }, [])
 
+  const refreshCloudList = useCallback(async () => {
+    if (!user) return
+    try {
+      const list = await listCloudCheckpoints(user.uid)
+      setCloudCheckpoints(list)
+    } catch (e) {
+      console.error('Failed to list cloud checkpoints:', e)
+    }
+  }, [user])
+
   useEffect(() => {
     refreshList()
   }, [refreshList])
+
+  useEffect(() => {
+    if (user && activeTab === 'cloud') {
+      refreshCloudList()
+    }
+  }, [user, activeTab, refreshCloudList])
+
+  // Reset to local tab when user signs out
+  useEffect(() => {
+    if (!user && activeTab === 'cloud') {
+      setActiveTab('local')
+    }
+  }, [user, activeTab])
 
   const handleSave = useCallback(async () => {
     if (!params || !saveName.trim()) return
@@ -88,6 +127,34 @@ export function CheckpointPanel({
     }
   }, [params, saveName, config, step, lossHistory, vocab, datasetId, refreshList])
 
+  const handleCloudSave = useCallback(async () => {
+    if (!params || !saveName.trim() || !user) return
+    setCloudSaving(true)
+    setError(null)
+    try {
+      const serialized = await serializeParams(params)
+      const checkpoint: Checkpoint = {
+        version: 1,
+        name: saveName.trim(),
+        config,
+        step,
+        lossHistory,
+        params: serialized,
+        vocab,
+        datasetId,
+        savedAt: Date.now(),
+      }
+      await saveCloudCheckpoint(user.uid, checkpoint)
+      setSaveName('')
+      setShowSaveInput(false)
+      await refreshCloudList()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCloudSaving(false)
+    }
+  }, [params, saveName, config, step, lossHistory, vocab, datasetId, user, refreshCloudList])
+
   const handleLoad = useCallback(async (name: string) => {
     setLoading(name)
     setError(null)
@@ -101,6 +168,20 @@ export function CheckpointPanel({
     }
   }, [onLoad])
 
+  const handleCloudLoad = useCallback(async (name: string) => {
+    if (!user) return
+    setCloudLoading(name)
+    setError(null)
+    try {
+      const checkpoint = await loadCloudCheckpoint(user.uid, name)
+      onLoad(checkpoint)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setCloudLoading(null)
+    }
+  }, [user, onLoad])
+
   const handleDelete = useCallback(async (name: string) => {
     setError(null)
     try {
@@ -110,6 +191,17 @@ export function CheckpointPanel({
       setError(e instanceof Error ? e.message : String(e))
     }
   }, [refreshList])
+
+  const handleCloudDelete = useCallback(async (name: string) => {
+    if (!user) return
+    setError(null)
+    try {
+      await deleteCloudCheckpoint(user.uid, name)
+      await refreshCloudList()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }, [user, refreshCloudList])
 
   const handleExport = useCallback(async (name: string) => {
     setError(null)
@@ -149,9 +241,37 @@ export function CheckpointPanel({
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const isCloud = activeTab === 'cloud'
+  const isSaving = isCloud ? cloudSaving : saving
+  const handleSaveAction = isCloud ? handleCloudSave : handleSave
+
   return (
     <div className="checkpoint-panel" style={styles.container}>
       <h3 style={styles.heading}>Checkpoints</h3>
+
+      {/* Local/Cloud tabs */}
+      {user && (
+        <div style={styles.tabBar}>
+          <button
+            onClick={() => setActiveTab('local')}
+            style={{ ...styles.tabBtn, ...(activeTab === 'local' ? styles.tabActive : {}) }}
+          >
+            Local
+          </button>
+          <button
+            onClick={() => setActiveTab('cloud')}
+            style={{ ...styles.tabBtn, ...(activeTab === 'cloud' ? styles.tabActive : {}) }}
+          >
+            Cloud
+          </button>
+        </div>
+      )}
 
       {error && <div style={styles.error}>{error}</div>}
 
@@ -164,19 +284,19 @@ export function CheckpointPanel({
               onChange={(e) => setSaveName(e.target.value)}
               placeholder="Checkpoint name..."
               style={styles.input}
-              disabled={disabled || saving}
+              disabled={disabled || isSaving}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSave()
+                if (e.key === 'Enter') handleSaveAction()
                 if (e.key === 'Escape') { setShowSaveInput(false); setSaveName('') }
               }}
               autoFocus
             />
             <button
-              onClick={handleSave}
-              disabled={disabled || saving || !saveName.trim() || !params}
+              onClick={handleSaveAction}
+              disabled={disabled || isSaving || !saveName.trim() || !params}
               style={{ ...styles.btn, ...styles.btnSave }}
             >
-              {saving ? 'Saving...' : 'Save'}
+              {isSaving ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={() => { setShowSaveInput(false); setSaveName('') }}
@@ -192,60 +312,105 @@ export function CheckpointPanel({
               disabled={disabled || !params}
               style={{ ...styles.btn, ...styles.btnSave }}
             >
-              Save Checkpoint
+              {isCloud ? 'Save to Cloud' : 'Save Checkpoint'}
             </button>
-            <label style={{ ...styles.btn, ...styles.btnImport, ...(disabled ? styles.btnDisabled : {}) }}>
-              Import
-              <input
-                type="file"
-                accept=".llmsb"
-                onChange={handleImport}
-                disabled={disabled}
-                style={{ display: 'none' }}
-              />
-            </label>
+            {!isCloud && (
+              <label style={{ ...styles.btn, ...styles.btnImport, ...(disabled ? styles.btnDisabled : {}) }}>
+                Import
+                <input
+                  type="file"
+                  accept=".llmsb"
+                  onChange={handleImport}
+                  disabled={disabled}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            )}
           </div>
         )}
       </div>
 
-      {checkpoints.length === 0 ? (
-        <div style={styles.emptyMsg}>No saved checkpoints</div>
-      ) : (
-        <div style={styles.list}>
-          {checkpoints.map((cp) => (
-            <div key={cp.name} style={styles.item}>
-              <div style={styles.itemInfo}>
-                <span style={styles.itemName}>{cp.name}</span>
-                <span style={styles.itemMeta}>
-                  Step {cp.step} | {formatDate(cp.savedAt)}
-                </span>
-              </div>
-              <div style={styles.itemActions}>
-                <button
-                  onClick={() => handleLoad(cp.name)}
-                  disabled={disabled || loading === cp.name}
-                  style={{ ...styles.btnSmall, ...styles.btnLoad }}
-                >
-                  {loading === cp.name ? '...' : 'Load'}
-                </button>
-                <button
-                  onClick={() => handleExport(cp.name)}
-                  disabled={disabled}
-                  style={{ ...styles.btnSmall, ...styles.btnExport }}
-                >
-                  Export
-                </button>
-                <button
-                  onClick={() => handleDelete(cp.name)}
-                  disabled={disabled}
-                  style={{ ...styles.btnSmall, ...styles.btnDelete }}
-                >
-                  Delete
-                </button>
-              </div>
+      {/* Local checkpoint list */}
+      {!isCloud && (
+        <>
+          {checkpoints.length === 0 ? (
+            <div style={styles.emptyMsg}>No saved checkpoints</div>
+          ) : (
+            <div style={styles.list}>
+              {checkpoints.map((cp) => (
+                <div key={cp.name} style={styles.item}>
+                  <div style={styles.itemInfo}>
+                    <span style={styles.itemName}>{cp.name}</span>
+                    <span style={styles.itemMeta}>
+                      Step {cp.step} | {formatDate(cp.savedAt)}
+                    </span>
+                  </div>
+                  <div style={styles.itemActions}>
+                    <button
+                      onClick={() => handleLoad(cp.name)}
+                      disabled={disabled || loading === cp.name}
+                      style={{ ...styles.btnSmall, ...styles.btnLoad }}
+                    >
+                      {loading === cp.name ? '...' : 'Load'}
+                    </button>
+                    <button
+                      onClick={() => handleExport(cp.name)}
+                      disabled={disabled}
+                      style={{ ...styles.btnSmall, ...styles.btnExport }}
+                    >
+                      Export
+                    </button>
+                    <button
+                      onClick={() => handleDelete(cp.name)}
+                      disabled={disabled}
+                      style={{ ...styles.btnSmall, ...styles.btnDelete }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+        </>
+      )}
+
+      {/* Cloud checkpoint list */}
+      {isCloud && (
+        <>
+          {cloudCheckpoints.length === 0 ? (
+            <div style={styles.emptyMsg}>No cloud checkpoints</div>
+          ) : (
+            <div style={styles.list}>
+              {cloudCheckpoints.map((cp) => (
+                <div key={cp.name} style={styles.item}>
+                  <div style={styles.itemInfo}>
+                    <span style={styles.itemName}>{cp.name}</span>
+                    <span style={styles.itemMeta}>
+                      Step {cp.step} | {cp.configSummary} | {formatSize(cp.size)} | {formatDate(cp.savedAt)}
+                    </span>
+                  </div>
+                  <div style={styles.itemActions}>
+                    <button
+                      onClick={() => handleCloudLoad(cp.name)}
+                      disabled={disabled || cloudLoading === cp.name}
+                      style={{ ...styles.btnSmall, ...styles.btnLoad }}
+                    >
+                      {cloudLoading === cp.name ? '...' : 'Load'}
+                    </button>
+                    <button
+                      onClick={() => handleCloudDelete(cp.name)}
+                      disabled={disabled}
+                      style={{ ...styles.btnSmall, ...styles.btnDelete }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -266,6 +431,29 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
     fontFamily: 'var(--font-body)',
+  },
+  tabBar: {
+    display: 'flex',
+    gap: '0.25rem',
+    marginBottom: '0.75rem',
+    background: '#111',
+    borderRadius: '4px',
+    padding: '0.2rem',
+  },
+  tabBtn: {
+    flex: 1,
+    padding: '0.3rem 0.5rem',
+    border: 'none',
+    borderRadius: '3px',
+    background: 'transparent',
+    color: '#888',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  tabActive: {
+    background: '#333',
+    color: '#e0e0e0',
   },
   error: {
     background: 'rgba(239, 68, 68, 0.1)',
@@ -353,6 +541,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '0.15rem',
+    minWidth: 0,
+    flex: 1,
   },
   itemName: {
     color: 'var(--text-1)',
@@ -367,6 +557,7 @@ const styles: Record<string, React.CSSProperties> = {
   itemActions: {
     display: 'flex',
     gap: '0.3rem',
+    flexShrink: 0,
   },
   btnSmall: {
     padding: '0.25rem 0.5rem',

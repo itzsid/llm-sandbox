@@ -194,8 +194,7 @@ export function exportCheckpoint(checkpoint: Checkpoint): Blob {
   return new Blob([buffer], { type: 'application/octet-stream' })
 }
 
-export async function importCheckpoint(file: File): Promise<Checkpoint> {
-  const arrayBuffer = await file.arrayBuffer()
+export function importCheckpointFromBuffer(arrayBuffer: ArrayBuffer): Checkpoint {
   const view = new DataView(arrayBuffer)
 
   // Read header length
@@ -232,6 +231,11 @@ export async function importCheckpoint(file: File): Promise<Checkpoint> {
     datasetId: metadata.datasetId,
     savedAt: metadata.savedAt,
   }
+}
+
+export async function importCheckpoint(file: File): Promise<Checkpoint> {
+  const arrayBuffer = await file.arrayBuffer()
+  return importCheckpointFromBuffer(arrayBuffer)
 }
 
 export { serializeParams, deserializeParams }

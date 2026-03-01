@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { GpuStatus } from './ui/GpuStatus'
+import { AuthButton } from './ui/AuthButton'
 import { TrainingPanel } from './ui/TrainingPanel'
 import { DatasetPanel } from './ui/DatasetPanel'
 import { CodeEditor } from './ui/CodeEditor'
@@ -13,6 +14,7 @@ import { TrainingHyperparamsEditor } from './ui/TrainingHyperparamsEditor'
 import { encodeConfigToHash, decodeConfigFromHash } from './utils/config-url'
 import { loadState, saveState } from './utils/persistence'
 import { loadBuiltinDataset } from './data/datasets'
+import { useAuth } from './hooks/useAuth'
 import type { Dataset } from './data/datasets'
 import {
   type ModelConfig,
@@ -33,6 +35,7 @@ export interface TrainingControl {
 }
 
 function App() {
+  const { user, loading: authLoading } = useAuth()
   const [configSubTab, setConfigSubTab] = useState<ConfigSubTab>('code')
   const [modelConfig, setModelConfig] = useState<ModelConfig>(PRESETS.nano)
   const [configText, setConfigText] = useState<string>(() => configToText(PRESETS.nano))
@@ -182,6 +185,7 @@ function App() {
           {restoredMsg && (
             <span style={{ color: 'var(--amber)', fontSize: '0.75rem' }}>{restoredMsg}</span>
           )}
+          <AuthButton user={user} loading={authLoading} />
           <GpuStatus />
         </div>
       </header>
@@ -274,6 +278,7 @@ function App() {
             onTrainingStatusChange={handleTrainingStatusChange}
             trainerRef={trainerRef}
             trainingControlRef={trainingControlRef}
+            user={user}
           />
         </section>
 

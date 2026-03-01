@@ -11,6 +11,7 @@ import type { Dataset } from '../data/datasets'
 import type { Checkpoint } from '../storage/checkpoint'
 import type { TrainingControl } from '../App'
 import type { TrainingStatus } from './ConfigSummary'
+import type { User } from 'firebase/auth'
 
 function formatTokenCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
@@ -50,9 +51,10 @@ interface TrainingPanelProps {
   onTrainingStatusChange: (status: TrainingStatus) => void
   trainerRef?: React.MutableRefObject<Trainer | null>
   trainingControlRef?: React.MutableRefObject<TrainingControl | null>
+  user: User | null
 }
 
-export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef }: TrainingPanelProps) {
+export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef, user }: TrainingPanelProps) {
   const [status, setStatus] = useState<TrainingStatus>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
@@ -414,6 +416,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
             datasetId={dataset?.id ?? ''}
             onLoad={handleCheckpointLoad}
             disabled={isTraining}
+            user={user}
           />
         </div>
       </div>
