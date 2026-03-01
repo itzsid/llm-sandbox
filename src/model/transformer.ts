@@ -270,7 +270,7 @@ export function getAllParams(params: TransformerParams): Tensor[] {
 }
 
 /** Split params into weight-decay (2D weight matrices) and no-decay (biases, LayerNorm) groups */
-export function getParamGroups(params: TransformerParams, weightDecay: number): { decay: Tensor[]; noDecay: Tensor[] } {
+export function getParamGroups(params: TransformerParams, _weightDecay: number): { decay: Tensor[]; noDecay: Tensor[] } {
   // 2D+ weight matrices get weight decay
   const decay: Tensor[] = [
     params.tokenEmbed,

@@ -1,7 +1,7 @@
 import { Tensor } from '../gpu/tensor'
 import { crossEntropy } from '../gpu/ops'
 import { backward, clearTape, setGradEnabled } from '../gpu/autograd'
-import { AdamOptimizer, type ParamGroup } from '../gpu/optimizer'
+import { AdamOptimizer } from '../gpu/optimizer'
 import { CharTokenizer } from './tokenizer'
 import { initTransformer, transformerForward, getAllParams, getParamGroups, deserializeParams, type TransformerParams } from '../model/transformer'
 import { type TransformerConfig, NANO_GPT_CONFIG } from '../model/config'
