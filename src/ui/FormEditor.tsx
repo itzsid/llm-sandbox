@@ -1,4 +1,5 @@
 import type { ModelConfig, ConfigError } from '../model/schema'
+import type { TokenizerType } from '../training/tokenizer'
 
 interface FormEditorProps {
   config: ModelConfig
@@ -65,6 +66,16 @@ export function FormEditor({ config, onChange, errors }: FormEditorProps) {
             value={config.name}
             onChange={(e) => updateTop('name', e.target.value)}
           />
+        </Field>
+        <Field label="Tokenizer">
+          <select
+            className="hp-input"
+            value={config.tokenizerType ?? 'bpe-gpt2'}
+            onChange={(e) => updateTop('tokenizerType', e.target.value as TokenizerType)}
+          >
+            <option value="bpe-gpt2">GPT-2 BPE</option>
+            <option value="char">Character-level</option>
+          </select>
         </Field>
         <Field label="Block Size" hint="context window, 8 - 1024" error={fieldError('blockSize')}>
           <input

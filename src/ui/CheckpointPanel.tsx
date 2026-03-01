@@ -19,13 +19,14 @@ import type { CloudCheckpointMeta } from '../firebase/cloudStorage'
 import type { TransformerParams } from '../model/transformer'
 import type { TransformerConfig } from '../model/config'
 import type { User } from 'firebase/auth'
+import type { TokenizerState } from '../training/tokenizer'
 
 export interface CheckpointPanelProps {
   params: TransformerParams | null
   config: TransformerConfig
   step: number
   lossHistory: number[]
-  vocab: string[]
+  tokenizerState: TokenizerState
   datasetId: string
   onLoad: (checkpoint: Checkpoint) => void
   disabled: boolean
@@ -46,7 +47,7 @@ export function CheckpointPanel({
   config,
   step,
   lossHistory,
-  vocab,
+  tokenizerState,
   datasetId,
   onLoad,
   disabled,
@@ -106,13 +107,13 @@ export function CheckpointPanel({
     try {
       const serialized = await serializeParams(params)
       const checkpoint: Checkpoint = {
-        version: 1,
+        version: 2,
         name: saveName.trim(),
         config,
         step,
         lossHistory,
         params: serialized,
-        vocab,
+        tokenizer: tokenizerState,
         datasetId,
         savedAt: Date.now(),
       }
@@ -125,7 +126,7 @@ export function CheckpointPanel({
     } finally {
       setSaving(false)
     }
-  }, [params, saveName, config, step, lossHistory, vocab, datasetId, refreshList])
+  }, [params, saveName, config, step, lossHistory, tokenizerState, datasetId, refreshList])
 
   const handleCloudSave = useCallback(async () => {
     if (!params || !saveName.trim() || !user) return
@@ -134,13 +135,13 @@ export function CheckpointPanel({
     try {
       const serialized = await serializeParams(params)
       const checkpoint: Checkpoint = {
-        version: 1,
+        version: 2,
         name: saveName.trim(),
         config,
         step,
         lossHistory,
         params: serialized,
-        vocab,
+        tokenizer: tokenizerState,
         datasetId,
         savedAt: Date.now(),
       }
@@ -153,7 +154,7 @@ export function CheckpointPanel({
     } finally {
       setCloudSaving(false)
     }
-  }, [params, saveName, config, step, lossHistory, vocab, datasetId, user, refreshCloudList])
+  }, [params, saveName, config, step, lossHistory, tokenizerState, datasetId, user, refreshCloudList])
 
   const handleLoad = useCallback(async (name: string) => {
     setLoading(name)

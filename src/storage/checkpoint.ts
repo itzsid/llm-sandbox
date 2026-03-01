@@ -1,14 +1,15 @@
 import { serializeParams, deserializeParams } from '../model/transformer'
 import type { TransformerConfig } from '../model/config'
+import type { TokenizerState } from '../training/tokenizer'
 
 export interface Checkpoint {
-  version: number  // 1
+  version: number  // 2
   name: string
   config: TransformerConfig
   step: number
   lossHistory: number[]
   params: Record<string, { shape: number[]; data: Float32Array }>
-  vocab: string[]
+  tokenizer: TokenizerState
   datasetId: string
   savedAt: number
 }
@@ -61,9 +62,27 @@ function fromStorable(stored: any): Checkpoint {
       data: new Float32Array(val.data),
     }
   }
+
+  // v1 → v2 migration: convert vocab array to TokenizerState
+  let tokenizer: TokenizerState
+  if (stored.tokenizer) {
+    tokenizer = stored.tokenizer
+  } else if (stored.vocab) {
+    tokenizer = { type: 'char', vocab: stored.vocab }
+  } else {
+    tokenizer = { type: 'bpe-gpt2' }
+  }
+
   return {
-    ...stored,
+    version: 2,
+    name: stored.name,
+    config: stored.config,
+    step: stored.step,
+    lossHistory: stored.lossHistory,
     params,
+    tokenizer,
+    datasetId: stored.datasetId,
+    savedAt: stored.savedAt,
   }
 }
 
@@ -158,12 +177,12 @@ export function exportCheckpoint(checkpoint: Checkpoint): Blob {
   }
 
   const metadata = JSON.stringify({
-    version: checkpoint.version,
+    version: 2,
     name: checkpoint.name,
     config: checkpoint.config,
     step: checkpoint.step,
     lossHistory: checkpoint.lossHistory,
-    vocab: checkpoint.vocab,
+    tokenizer: checkpoint.tokenizer,
     datasetId: checkpoint.datasetId,
     savedAt: checkpoint.savedAt,
     paramEntries,
@@ -220,14 +239,24 @@ export function importCheckpointFromBuffer(arrayBuffer: ArrayBuffer): Checkpoint
     }
   }
 
+  // v1 → v2 migration for imported files
+  let tokenizer: TokenizerState
+  if (metadata.tokenizer) {
+    tokenizer = metadata.tokenizer
+  } else if (metadata.vocab) {
+    tokenizer = { type: 'char', vocab: metadata.vocab }
+  } else {
+    tokenizer = { type: 'bpe-gpt2' }
+  }
+
   return {
-    version: metadata.version,
+    version: 2,
     name: metadata.name,
     config: metadata.config,
     step: metadata.step,
     lossHistory: metadata.lossHistory,
     params,
-    vocab: metadata.vocab,
+    tokenizer,
     datasetId: metadata.datasetId,
     savedAt: metadata.savedAt,
   }

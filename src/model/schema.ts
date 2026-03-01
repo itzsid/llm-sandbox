@@ -1,4 +1,5 @@
 import type { TransformerConfig } from './config'
+import type { TokenizerType } from '../training/tokenizer'
 
 // ---- Interfaces ----
 
@@ -8,6 +9,7 @@ export interface ModelConfig {
   blockSize: number           // context window size
   layers: LayerConfig[]
   tieWeights: boolean         // tie token embedding and LM head weights
+  tokenizerType?: TokenizerType
 }
 
 export interface LayerConfig {
@@ -142,7 +144,9 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
 // ---- Parameter estimation ----
 
 export function estimateParamCount(config: ModelConfig): number {
-  const vocabSize = config.vocabSize === 'auto' ? 65 : config.vocabSize
+  const vocabSize = config.vocabSize === 'auto'
+    ? (config.tokenizerType === 'char' ? 65 : 50257)
+    : config.vocabSize
   const nLayers = config.layers.length
   if (nLayers === 0) return 0
 
@@ -194,7 +198,7 @@ export function toLegacyConfig(config: ModelConfig, actualVocabSize?: number): T
     actualVocabSize != null
       ? actualVocabSize
       : config.vocabSize === 'auto'
-        ? 65
+        ? (config.tokenizerType === 'char' ? 65 : 50257)
         : config.vocabSize
 
   return {
@@ -263,7 +267,8 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(2)
       .fill(null)
       .map(() => makeLayerConfig(64, 4, 256)),
-    tieWeights: false,
+    tieWeights: true,
+    tokenizerType: 'bpe-gpt2',
   },
   nano: {
     name: 'Nano',
@@ -272,7 +277,8 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(4)
       .fill(null)
       .map(() => makeLayerConfig(128, 4, 512)),
-    tieWeights: false,
+    tieWeights: true,
+    tokenizerType: 'bpe-gpt2',
   },
   micro: {
     name: 'Micro',
@@ -281,6 +287,7 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(6)
       .fill(null)
       .map(() => makeLayerConfig(256, 8, 1024)),
-    tieWeights: false,
+    tieWeights: true,
+    tokenizerType: 'bpe-gpt2',
   },
 }

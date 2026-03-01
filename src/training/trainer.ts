@@ -2,7 +2,7 @@ import { Tensor } from '../gpu/tensor'
 import { crossEntropy } from '../gpu/ops'
 import { backward, clearTape, setGradEnabled } from '../gpu/autograd'
 import { AdamOptimizer } from '../gpu/optimizer'
-import { CharTokenizer } from './tokenizer'
+import { createTokenizer, restoreTokenizer, type Tokenizer, type TokenizerType, type TokenizerState } from './tokenizer'
 import { initTransformer, transformerForward, getAllParams, getParamGroups, deserializeParams, type TransformerParams } from '../model/transformer'
 import { type TransformerConfig, NANO_GPT_CONFIG } from '../model/config'
 
@@ -45,7 +45,8 @@ export function computeLR(step: number, hp: TrainingHyperparams): number {
 
 export class Trainer {
   private _config: TransformerConfig
-  private _tokenizer: CharTokenizer | null = null
+  private _tokenizerType: TokenizerType
+  private _tokenizer: Tokenizer | null = null
   private encodedText: Uint32Array | null = null
   private valStart = 0
   private _params: TransformerParams | null = null
@@ -58,15 +59,16 @@ export class Trainer {
   private maxGradNorm = 1.0
   private _lossHistory: number[] = []
 
-  constructor(config?: TransformerConfig, hyperparams?: Partial<TrainingHyperparams>) {
+  constructor(config?: TransformerConfig, hyperparams?: Partial<TrainingHyperparams>, tokenizerType?: TokenizerType) {
     this._config = config ?? NANO_GPT_CONFIG
     this.seqLen = this._config.blockSize
     this.hyperparams = { ...DEFAULT_HYPERPARAMS, ...hyperparams }
+    this._tokenizerType = tokenizerType ?? 'bpe-gpt2'
   }
 
   get config(): TransformerConfig { return this._config }
   get params(): TransformerParams | null { return this._params }
-  get tokenizer(): CharTokenizer | null { return this._tokenizer }
+  get tokenizer(): Tokenizer | null { return this._tokenizer }
   get lossHistory(): number[] { return this._lossHistory }
   get step(): number { return this._step }
   get isRunning(): boolean { return this.running }
@@ -103,9 +105,9 @@ export class Trainer {
   }
 
   async init(text: string): Promise<void> {
-    this._tokenizer = new CharTokenizer()
-    this._tokenizer.buildVocab(text)
-    console.log(`Vocab size: ${this._tokenizer.vocabSize}`)
+    this._tokenizer = createTokenizer(this._tokenizerType)
+    this._tokenizer.init(text)
+    console.log(`Tokenizer: ${this._tokenizerType}, vocab size: ${this._tokenizer.vocabSize}`)
 
     this._config = { ...this._config, vocabSize: this._tokenizer.vocabSize }
 
@@ -134,11 +136,11 @@ export class Trainer {
     config: TransformerConfig,
     step: number,
     lossHistory: number[],
-    _vocab: string[],
+    tokenizerState: TokenizerState,
     text: string,
   ): Promise<void> {
-    this._tokenizer = new CharTokenizer()
-    this._tokenizer.buildVocab(text)
+    this._tokenizer = restoreTokenizer(tokenizerState, text)
+    this._tokenizerType = tokenizerState.type
     this._config = config
     this.seqLen = config.blockSize
     this.encodedText = this._tokenizer.encode(text)
@@ -285,11 +287,13 @@ export class Trainer {
 
     setGradEnabled(false)
     try {
-      // Start with prompt tokens if provided, otherwise random character
+      // Start with prompt tokens if provided, otherwise a newline seed
       let generated: number[]
       if (prompt && prompt.length > 0) {
         const encoded = this._tokenizer.encode(prompt)
         generated = Array.from(encoded)
+      } else if (this._tokenizer.type === 'bpe-gpt2') {
+        generated = Array.from(this._tokenizer.encode('\n'))
       } else {
         const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
         generated = [startIdx]
@@ -352,6 +356,8 @@ export class Trainer {
       if (prompt && prompt.length > 0) {
         const encoded = this._tokenizer.encode(prompt)
         generated = Array.from(encoded)
+      } else if (this._tokenizer.type === 'bpe-gpt2') {
+        generated = Array.from(this._tokenizer.encode('\n'))
       } else {
         const startIdx = Math.floor(Math.random() * this._tokenizer.vocabSize)
         generated = [startIdx]

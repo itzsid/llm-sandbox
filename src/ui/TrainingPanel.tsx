@@ -117,7 +117,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       setStatus('initializing')
 
       const legacyConfig = toLegacyConfig(config)
-      const trainer = new Trainer(legacyConfig, hyperparams)
+      const trainer = new Trainer(legacyConfig, hyperparams, config.tokenizerType)
       setTrainer(trainer)
       await trainer.init(dataset.text)
 
@@ -197,7 +197,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         checkpoint.config,
         checkpoint.step,
         checkpoint.lossHistory,
-        checkpoint.vocab,
+        checkpoint.tokenizer,
         dataset.text,
       )
 
@@ -412,7 +412,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
             config={trainer?.config ?? toLegacyConfig(config)}
             step={trainer?.step ?? 0}
             lossHistory={lossHistory}
-            vocab={trainer?.tokenizer?.vocab ?? []}
+            tokenizerState={trainer?.tokenizer?.getState() ?? { type: config.tokenizerType ?? 'bpe-gpt2' }}
             datasetId={dataset?.id ?? ''}
             onLoad={handleCheckpointLoad}
             disabled={isTraining}
