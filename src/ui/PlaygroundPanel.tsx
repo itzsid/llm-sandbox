@@ -99,7 +99,7 @@ export function PlaygroundPanel({ trainer, isTraining }: PlaygroundPanelProps) {
           />
         </div>
         <button
-          className="btn btn-blue"
+          className="btn btn-primary"
           onClick={handleGenerate}
           disabled={!canGenerate}
         >
@@ -112,10 +112,10 @@ export function PlaygroundPanel({ trainer, isTraining }: PlaygroundPanelProps) {
           <pre ref={outputRef} style={styles.outputText}>
             {/* Prompt text in dim color */}
             {promptLen > 0 && (
-              <span style={{ color: '#666' }}>{output.slice(0, promptLen)}</span>
+              <span style={{ color: 'var(--text-3)' }}>{output.slice(0, promptLen)}</span>
             )}
             {/* Generated continuation in bright color */}
-            <span className="playground-token" style={{ color: '#e0e0e0' }}>
+            <span className="playground-token" style={{ color: 'var(--text-1)' }}>
               {output.slice(promptLen)}
             </span>
             {generating && <span style={styles.cursor}>|</span>}
@@ -150,17 +150,18 @@ export function PlaygroundPanel({ trainer, isTraining }: PlaygroundPanelProps) {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     padding: '1rem',
-    background: '#1a1a1a',
-    border: '1px solid #333',
-    borderRadius: '6px',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
     marginTop: '1.5rem',
   },
   heading: {
     fontSize: '0.85rem',
-    color: '#888',
+    color: 'var(--text-3)',
     margin: '0 0 0.75rem',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
+    fontFamily: 'var(--font-body)',
   },
   promptArea: {
     marginBottom: '0.75rem',
@@ -168,12 +169,12 @@ const styles: Record<string, React.CSSProperties> = {
   promptInput: {
     width: '100%',
     padding: '0.75rem',
-    background: '#222',
-    border: '1px solid #444',
-    borderRadius: '4px',
-    color: '#e0e0e0',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-1)',
     fontSize: '0.9rem',
-    fontFamily: "'SF Mono', 'Fira Code', monospace",
+    fontFamily: 'var(--font-mono)',
     outline: 'none',
     resize: 'vertical',
     boxSizing: 'border-box',
@@ -194,22 +195,23 @@ const styles: Record<string, React.CSSProperties> = {
   },
   sliderLabel: {
     fontSize: '0.75rem',
-    color: '#aaa',
+    color: 'var(--text-2)',
+    fontFamily: 'var(--font-body)',
   },
   slider: {
     width: '100%',
-    accentColor: '#2196f3',
+    accentColor: 'var(--amber)',
   },
   outputArea: {
     marginTop: '0.5rem',
   },
   outputText: {
-    background: '#111',
-    border: '1px solid #333',
-    borderRadius: '4px',
+    background: 'var(--bg-base)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
     padding: '1rem',
     fontSize: '0.9rem',
-    fontFamily: "'SF Mono', 'Fira Code', monospace",
+    fontFamily: 'var(--font-mono)',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
     maxHeight: '300px',
@@ -218,11 +220,11 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.6,
   },
   cursor: {
-    color: '#4caf50',
+    color: 'var(--amber)',
     animation: 'blink 1s step-end infinite',
   },
   hint: {
-    color: '#666',
+    color: 'var(--text-3)',
     fontSize: '0.85rem',
     fontStyle: 'italic',
     textAlign: 'center',
@@ -230,31 +232,32 @@ const styles: Record<string, React.CSSProperties> = {
   },
   history: {
     marginTop: '1rem',
-    borderTop: '1px solid #333',
+    borderTop: '1px solid var(--border)',
     paddingTop: '0.75rem',
   },
   historyHeading: {
     fontSize: '0.75rem',
-    color: '#888',
+    color: 'var(--text-3)',
     margin: '0 0 0.5rem',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
+    fontFamily: 'var(--font-body)',
   },
   historyEntry: {
     padding: '0.5rem',
-    background: '#222',
-    borderRadius: '4px',
+    background: 'var(--bg-elevated)',
+    borderRadius: 'var(--radius-sm)',
     marginBottom: '0.5rem',
-    border: '1px solid #333',
+    border: '1px solid var(--border)',
   },
   historyPrompt: {
-    color: '#999',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     marginBottom: '0.25rem',
   },
   historyCompletion: {
-    color: '#ccc',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
-    fontFamily: "'SF Mono', 'Fira Code', monospace",
+    fontFamily: 'var(--font-mono)',
   },
 }

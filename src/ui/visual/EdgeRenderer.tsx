@@ -49,7 +49,7 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({ edge, nodes }) => {
       <path
         d={path}
         fill="none"
-        stroke="#555"
+        stroke="rgba(255,255,255,0.12)"
         strokeWidth={2}
         strokeLinecap="round"
       />
@@ -58,16 +58,16 @@ export const EdgeRenderer: React.FC<EdgeRendererProps> = ({ edge, nodes }) => {
         cx={tx}
         cy={ty}
         r={dotR}
-        fill="#555"
+        fill="rgba(255,255,255,0.12)"
       />
       {/* Dimension label at midpoint */}
       {edge.label && (
         <text
           x={midX + 8}
           y={midY}
-          fill="#666"
+          fill="#4B5563"
           fontSize={9}
-          fontFamily="-apple-system, sans-serif"
+          fontFamily="'Instrument Sans', sans-serif"
           dominantBaseline="central"
         >
           {edge.label}

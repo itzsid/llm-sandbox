@@ -6,7 +6,7 @@ import { CodeEditor } from './ui/CodeEditor'
 import { NodeEditor } from './ui/visual/NodeEditor'
 import { FormEditor } from './ui/FormEditor'
 import { OnboardingBanner } from './ui/OnboardingBanner'
-import { ConfigSummary } from './ui/ConfigSummary'
+import { ConfigSummary, type TrainingStatus } from './ui/ConfigSummary'
 import { PlaygroundPanel } from './ui/PlaygroundPanel'
 import { Trainer } from './training/trainer'
 import { encodeConfigToHash, decodeConfigFromHash } from './utils/config-url'
@@ -26,6 +26,11 @@ import './App.css'
 
 type ConfigSubTab = 'code' | 'visual' | 'form'
 
+export interface TrainingControl {
+  start: () => void
+  stop: () => void
+}
+
 function App() {
   const [configSubTab, setConfigSubTab] = useState<ConfigSubTab>('code')
   const [modelConfig, setModelConfig] = useState<ModelConfig>(PRESETS.nano)
@@ -33,10 +38,12 @@ function App() {
   const [configErrors, setConfigErrors] = useState<ConfigError[]>([])
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null)
   const [trainingActive, setTrainingActive] = useState(false)
+  const [trainingStatus, setTrainingStatus] = useState<TrainingStatus>('idle')
   const [restoredMsg, setRestoredMsg] = useState<string | null>(null)
   const trainingSectionRef = useRef<HTMLDivElement>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trainerRef = useRef<Trainer | null>(null)
+  const trainingControlRef = useRef<TrainingControl | null>(null)
 
   const paramCount = useMemo(() => estimateParamCount(modelConfig), [modelConfig])
 
@@ -116,6 +123,10 @@ function App() {
     setTrainingActive(active)
   }, [])
 
+  const handleTrainingStatusChange = useCallback((status: TrainingStatus) => {
+    setTrainingStatus(status)
+  }, [])
+
   // Share config via URL hash
   const handleShare = useCallback(() => {
     const hash = encodeConfigToHash(modelConfig)
@@ -143,17 +154,31 @@ function App() {
     }, 100)
   }, [])
 
-  const handleStartTraining = useCallback(() => {
+  const handleSummaryStart = useCallback(() => {
     trainingSectionRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Small delay to let scroll happen, then trigger training
+    setTimeout(() => {
+      trainingControlRef.current?.start()
+    }, 150)
+  }, [])
+
+  const handleSummaryStop = useCallback(() => {
+    trainingControlRef.current?.stop()
   }, [])
 
   return (
     <div className="app">
       <header className="header">
-        <h1>LLM Sandbox</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 6L8 12L4 18" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M20 6L16 12L20 18" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          LLM Sandbox
+        </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {restoredMsg && (
-            <span style={{ color: '#4caf50', fontSize: '0.75rem' }}>{restoredMsg}</span>
+            <span style={{ color: 'var(--amber)', fontSize: '0.75rem' }}>{restoredMsg}</span>
           )}
           <GpuStatus />
         </div>
@@ -209,7 +234,7 @@ function App() {
           )}
 
           {configSubTab === 'form' && (
-            <div style={{ padding: '1rem', background: '#1a1a1a', border: '1px solid #333', borderRadius: '4px' }}>
+            <div style={{ padding: '1rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
               <FormEditor
                 config={modelConfig}
                 onChange={handleVisualChange}
@@ -225,8 +250,9 @@ function App() {
           paramCount={paramCount}
           errors={configErrors}
           dataset={selectedDataset}
-          trainingActive={trainingActive}
-          onStartTraining={handleStartTraining}
+          trainingStatus={trainingStatus}
+          onStart={handleSummaryStart}
+          onStop={handleSummaryStop}
         />
 
         {/* === Training Section === */}
@@ -235,7 +261,9 @@ function App() {
             config={modelConfig}
             dataset={selectedDataset}
             onTrainingStateChange={handleTrainingStateChange}
+            onTrainingStatusChange={handleTrainingStatusChange}
             trainerRef={trainerRef}
+            trainingControlRef={trainingControlRef}
           />
         </section>
 

@@ -7,6 +7,8 @@ import { toLegacyConfig } from '../model/schema'
 import type { ModelConfig } from '../model/schema'
 import type { Dataset } from '../data/datasets'
 import type { Checkpoint } from '../storage/checkpoint'
+import type { TrainingControl } from '../App'
+import type { TrainingStatus } from './ConfigSummary'
 
 function formatTokenCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
@@ -27,11 +29,13 @@ interface TrainingPanelProps {
   config: ModelConfig
   dataset: Dataset | null
   onTrainingStateChange: (active: boolean) => void
+  onTrainingStatusChange: (status: TrainingStatus) => void
   trainerRef?: React.MutableRefObject<Trainer | null>
+  trainingControlRef?: React.MutableRefObject<TrainingControl | null>
 }
 
-export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerRef: externalTrainerRef }: TrainingPanelProps) {
-  const [status, setStatus] = useState<'idle' | 'initializing' | 'training' | 'stopped'>('idle')
+export function TrainingPanel({ config, dataset, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef }: TrainingPanelProps) {
+  const [status, setStatus] = useState<TrainingStatus>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
   const [valLossHistory, setValLossHistory] = useState<number[]>([])
@@ -57,6 +61,11 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
   useEffect(() => {
     onTrainingStateChange(isTraining)
   }, [isTraining, onTrainingStateChange])
+
+  // Report status changes to parent
+  useEffect(() => {
+    onTrainingStatusChange(status)
+  }, [status, onTrainingStatusChange])
 
   // Elapsed time ticker
   useEffect(() => {
@@ -108,6 +117,13 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
     trainerRef.current?.stop()
     setStatus('stopped')
   }, [])
+
+  // Expose start/stop to parent via ref
+  useEffect(() => {
+    if (trainingControlRef) {
+      trainingControlRef.current = { start: handleStart, stop: handleStop }
+    }
+  }, [trainingControlRef, handleStart, handleStop])
 
   const handleGenerate = useCallback(async () => {
     const trainer = trainerRef.current
@@ -162,27 +178,9 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
 
   return (
     <div className="training-panel">
-      {/* Full-width: metrics strip + charts */}
-      <div className="metrics-strip">
-        {(status === 'idle' || status === 'stopped') && (
-          <button onClick={handleStart} className="btn-start">
-            {status === 'stopped' ? 'Resume Training' : 'Start Training'}
-          </button>
-        )}
-        {status === 'training' && (
-          <button onClick={handleStop} className="btn-stop">
-            Stop
-          </button>
-        )}
-        {status === 'initializing' && (
-          <button disabled className="btn-disabled">
-            Initializing...
-          </button>
-        )}
-        {!dataset && status === 'idle' && (
-          <span className="no-dataset-hint">Select a dataset in Configure tab</span>
-        )}
-        {metrics && (
+      {/* Metrics strip — metrics only, no buttons */}
+      {metrics && (
+        <div className="metrics-strip">
           <div className="metrics">
             <div className="metric">
               <span className="metric-label">Step</span>
@@ -217,8 +215,8 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
               </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <div className="error-msg">{error}</div>}
 
@@ -226,11 +224,11 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
         <MetricsChart
           data={lossHistory}
           label="Train Loss"
-          color="#4caf50"
+          color="#22C55E"
           height={160}
           formatValue={(v) => v.toFixed(2)}
           secondaryData={valLossHistory.length > 1 ? valLossHistory : undefined}
-          secondaryColor="#2196f3"
+          secondaryColor="#60A5FA"
           secondaryLabel="Val Loss"
         />
       )}
@@ -239,7 +237,7 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
         <MetricsChart
           data={tokensPerSecHistory}
           label="Tokens/sec"
-          color="#ff9800"
+          color="#F59E0B"
           height={100}
           formatValue={(v) => v.toFixed(0)}
         />
@@ -260,12 +258,12 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, trainerR
                 style={{
                   width: '100%',
                   padding: '0.5rem 0.75rem',
-                  background: '#222',
-                  border: '1px solid #444',
-                  borderRadius: '4px',
-                  color: '#e0e0e0',
+                  background: 'var(--bg-elevated)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-1)',
                   fontSize: '0.85rem',
-                  fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+                  fontFamily: 'var(--font-mono)',
                   outline: 'none',
                   boxSizing: 'border-box',
                 }}

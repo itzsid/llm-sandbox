@@ -15,14 +15,14 @@ const C_CENTER_X = 130
 
 // Node colors by type
 const COLORS: Record<string, string> = {
-  input: '#666',
-  token_embedding: '#9c27b0',
-  pos_embedding: '#9c27b0',
-  add: '#607d8b',
-  transformer_block: '#4caf50',
-  layernorm: '#ff9800',
-  lm_head: '#2196f3',
-  output: '#666',
+  input: '#4B5563',
+  token_embedding: '#A78BFA',
+  pos_embedding: '#A78BFA',
+  add: '#64748B',
+  transformer_block: '#F59E0B',
+  layernorm: '#FB923C',
+  lm_head: '#60A5FA',
+  output: '#4B5563',
 }
 
 interface CompactNode {
@@ -78,9 +78,9 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
   return (
     <div
       style={{
-        background: '#1a1a1a',
-        border: '1px solid #333',
-        borderRadius: 4,
+        background: '#111318',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 10,
         padding: 8,
       }}
     >
@@ -88,8 +88,9 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
         style={{
           margin: '0 0 8px 0',
           fontSize: '0.85rem',
-          color: '#e0e0e0',
-          fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+          color: '#F0F0F0',
+          fontFamily: "'Bricolage Grotesque', sans-serif",
+          fontWeight: 700,
         }}
       >
         Architecture
@@ -111,7 +112,7 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
                 y1={node.y + node.height}
                 x2={cx}
                 y2={next.y}
-                stroke="#555"
+                stroke="rgba(255,255,255,0.12)"
                 strokeWidth={1.5}
               />
             )
@@ -119,7 +120,7 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
 
           {/* Nodes — colored rectangles with labels */}
           {nodes.map((node, i) => {
-            const color = COLORS[node.type] || '#666'
+            const color = COLORS[node.type] || '#4B5563'
             return (
               <g key={i} transform={`translate(${x}, ${node.y})`}>
                 <rect
@@ -127,8 +128,8 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
                   height={node.height}
                   rx={4}
                   ry={4}
-                  fill="#1e1e1e"
-                  stroke="#444"
+                  fill="#111318"
+                  stroke="rgba(255,255,255,0.08)"
                   strokeWidth={1}
                 />
                 {/* Color accent — left strip */}
@@ -146,9 +147,9 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
                   y={node.height / 2}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fill="#e0e0e0"
+                  fill="#F0F0F0"
                   fontSize={11}
-                  fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
+                  fontFamily="'Instrument Sans', sans-serif"
                 >
                   {node.label}
                 </text>
@@ -160,10 +161,10 @@ export function ArchitectureDiagram({ config }: ArchitectureDiagramProps) {
       <div
         style={{
           fontSize: '0.75rem',
-          color: '#888',
+          color: '#9CA3AF',
           textAlign: 'center',
           marginTop: 6,
-          fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontFamily: "'JetBrains Mono', monospace",
         }}
       >
         {config.layers.length} layers, {dModel}d, {nHeads} heads | ~{formatParams(paramCount)} params

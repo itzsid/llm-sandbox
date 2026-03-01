@@ -172,14 +172,14 @@ export function CodeEditor({ value, onChange, errors, paramCount, onShare }: Cod
                 onClick={() => handlePresetClick(entry.key)}
                 onMouseEnter={(e) => {
                   if (!isActive) {
-                    ;(e.target as HTMLElement).style.borderColor = '#666'
-                    ;(e.target as HTMLElement).style.background = '#333'
+                    ;(e.target as HTMLElement).style.borderColor = 'rgba(245,158,11,0.4)'
+                    ;(e.target as HTMLElement).style.background = '#22262F'
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive) {
-                    ;(e.target as HTMLElement).style.borderColor = '#444'
-                    ;(e.target as HTMLElement).style.background = '#2a2a2a'
+                    ;(e.target as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'
+                    ;(e.target as HTMLElement).style.background = '#1A1D25'
                   }
                 }}
               >
@@ -264,7 +264,7 @@ export function CodeEditor({ value, onChange, errors, paramCount, onShare }: Cod
 
 // ---- Styles ----
 
-const monoFont = "'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
+const monoFont = "var(--font-mono)"
 
 const sharedEditorStyle: React.CSSProperties = {
   fontFamily: monoFont,
@@ -290,10 +290,10 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '8px 12px',
-    background: '#1a1a1a',
-    borderTopLeftRadius: '4px',
-    borderTopRightRadius: '4px',
-    border: '1px solid #333',
+    background: 'var(--bg-surface)',
+    borderTopLeftRadius: 'var(--radius-md)',
+    borderTopRightRadius: 'var(--radius-md)',
+    border: '1px solid var(--border)',
     borderBottom: 'none',
   },
   presetRow: {
@@ -302,23 +302,24 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap' as const,
   },
   presetButton: {
-    background: '#2a2a2a',
-    border: '1px solid #444',
+    background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)',
     borderRadius: '12px',
-    color: '#ccc',
+    color: 'var(--text-2)',
     padding: '3px 10px',
     fontSize: '0.75rem',
     fontFamily: monoFont,
     cursor: 'pointer',
-    transition: 'border-color 0.15s, background 0.15s',
+    transition: 'all 0.2s ease',
   },
   presetButtonActive: {
-    background: '#333',
-    borderColor: '#4caf50',
-    color: '#4caf50',
+    background: 'var(--amber-dim)',
+    borderColor: 'var(--amber)',
+    color: 'var(--amber)',
+    boxShadow: 'var(--amber-glow)',
   },
   paramCount: {
-    color: '#888',
+    color: 'var(--text-3)',
     fontSize: '0.8rem',
     fontFamily: monoFont,
     whiteSpace: 'nowrap' as const,
@@ -327,16 +328,16 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative' as const,
     display: 'flex',
     minHeight: '300px',
-    background: '#1a1a1a',
-    border: '1px solid #333',
-    borderBottomLeftRadius: '4px',
-    borderBottomRightRadius: '4px',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderBottomLeftRadius: 'var(--radius-md)',
+    borderBottomRightRadius: 'var(--radius-md)',
     overflow: 'hidden',
   },
   gutter: {
     width: '24px',
-    background: '#181818',
-    borderRight: '1px solid #333',
+    background: 'var(--bg-base)',
+    borderRight: '1px solid var(--border)',
     overflow: 'hidden',
     flexShrink: 0,
     paddingTop: '12px',
@@ -349,7 +350,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '10px',
   },
   gutterMarker: {
-    color: '#f44336',
+    color: 'var(--red)',
     fontWeight: 'bold' as const,
     fontSize: '11px',
     cursor: 'help',
@@ -365,7 +366,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 0,
     overflow: 'auto',
     background: 'transparent',
-    color: '#e0e0e0',
+    color: 'var(--text-1)',
   },
   textarea: {
     ...sharedEditorStyle,
@@ -374,7 +375,7 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: '300px',
     background: 'transparent',
     color: 'transparent',
-    caretColor: '#e0e0e0',
+    caretColor: 'var(--amber)',
     zIndex: 1,
     outline: 'none',
     resize: 'vertical' as const,
@@ -387,28 +388,28 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '4px',
   },
   errorItem: {
-    color: '#ff8a80',
+    color: '#FCA5A5',
     fontSize: '0.8rem',
     fontFamily: monoFont,
   },
   errorPath: {
-    color: '#ffab91',
+    color: '#FDBA74',
     fontWeight: 600,
   },
   errorSuggestion: {
-    color: '#64b5f6',
+    color: 'var(--blue)',
     fontSize: '0.75rem',
     marginTop: '2px',
     fontFamily: monoFont,
   },
   shareButton: {
-    background: '#2a2a2a',
-    border: '1px solid #444',
+    background: 'transparent',
+    border: '1px solid var(--border)',
     borderRadius: '12px',
-    color: '#64b5f6',
+    color: 'var(--text-2)',
     padding: '3px 10px',
     fontSize: '0.75rem',
     cursor: 'pointer',
-    transition: 'border-color 0.15s, background 0.15s',
+    transition: 'all 0.2s ease',
   },
 }

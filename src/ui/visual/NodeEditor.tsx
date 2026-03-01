@@ -24,24 +24,25 @@ const CANVAS_HEIGHT = 550
 const editorStyles: Record<string, React.CSSProperties> = {
   wrapper: {
     position: 'relative',
-    background: '#1a1a1a',
-    border: '1px solid #333',
-    borderRadius: 4,
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)',
     overflow: 'hidden',
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: 'var(--font-body)',
   },
   toolbar: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '8px 12px',
-    background: '#1a1a1a',
-    borderBottom: '1px solid #333',
+    background: 'var(--bg-surface)',
+    borderBottom: '1px solid var(--border)',
   },
   title: {
-    color: '#e0e0e0',
-    fontSize: 13,
-    fontWeight: 'bold',
+    color: 'var(--text-1)',
+    fontSize: 14,
+    fontWeight: 700,
+    fontFamily: 'var(--font-display)',
   },
   toolbarGroup: {
     display: 'flex',
@@ -49,30 +50,34 @@ const editorStyles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
   button: {
-    background: '#2a2a2a',
-    border: '1px solid #444',
-    borderRadius: 3,
-    color: '#e0e0e0',
+    background: 'transparent',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-2)',
     padding: '4px 10px',
     fontSize: 11,
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: 'var(--font-body)',
     cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   buttonPrimary: {
-    background: '#2e7d32',
-    border: '1px solid #4caf50',
-    borderRadius: 3,
-    color: '#e0e0e0',
+    background: 'var(--amber)',
+    border: '1px solid var(--amber)',
+    borderRadius: 'var(--radius-sm)',
+    color: '#000',
     padding: '4px 10px',
     fontSize: 11,
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: 'var(--font-body)',
+    fontWeight: 600,
     cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   zoomLabel: {
-    color: '#999',
+    color: 'var(--text-3)',
     fontSize: 10,
     minWidth: 36,
     textAlign: 'center' as const,
+    fontFamily: 'var(--font-mono)',
   },
   canvasContainer: {
     position: 'relative' as const,
@@ -342,7 +347,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
             width="100%"
             height={CANVAS_HEIGHT}
             viewBox={viewBox}
-            style={{ display: 'block', background: '#111' }}
+            style={{ display: 'block', background: '#08090C' }}
             onMouseDown={handleBackgroundMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

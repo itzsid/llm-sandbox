@@ -3,14 +3,14 @@ import type { VisualGraph, VisualNode, VisualEdge, Port } from './types'
 
 // Node colors by type
 const NODE_COLORS: Record<string, string> = {
-  input: '#666',
-  token_embedding: '#9c27b0', // purple
-  pos_embedding: '#9c27b0', // purple
-  add: '#607d8b', // gray-blue
-  transformer_block: '#4caf50', // green
-  layernorm: '#ff9800', // orange
-  lm_head: '#2196f3', // blue
-  output: '#666', // gray
+  input: '#4B5563',
+  token_embedding: '#A78BFA', // violet
+  pos_embedding: '#A78BFA', // violet
+  add: '#64748B', // slate
+  transformer_block: '#F59E0B', // amber
+  layernorm: '#FB923C', // orange
+  lm_head: '#60A5FA', // blue
+  output: '#4B5563',
 }
 
 const NODE_WIDTH = 280

@@ -37,8 +37,8 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
 
   // Subtle color tint for node body
   const tintColor = hexToRgba(node.color, 0.08)
-  const bgColor = selected ? '#2a2a2a' : '#1e1e1e'
-  const strokeColor = selected ? node.color : '#444'
+  const bgColor = selected ? '#1A1D25' : '#111318'
+  const strokeColor = selected ? node.color : 'rgba(255,255,255,0.08)'
   const showRemove = onRemove && (hovered || selected)
 
   // Format params as "key: value" lines
@@ -104,10 +104,10 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
         y={paramEntries.length > 0 ? node.height / 2 - 8 : node.height / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        fill="#e0e0e0"
-        fontSize={15}
-        fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
-        fontWeight={500}
+        fill="#F0F0F0"
+        fontSize={14}
+        fontFamily="'Instrument Sans', sans-serif"
+        fontWeight={600}
         pointerEvents="none"
       >
         {node.label}
@@ -120,9 +120,9 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
           y={node.height / 2 + 12}
           textAnchor="middle"
           dominantBaseline="central"
-          fill="#999"
-          fontSize={13}
-          fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
+          fill="#9CA3AF"
+          fontSize={12}
+          fontFamily="'JetBrains Mono', monospace"
           pointerEvents="none"
         >
           {paramText}
@@ -135,9 +135,10 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
           cx={topPortX}
           cy={topPortY}
           r={portR}
-          fill="#555"
+          fill="#1A1D25"
           stroke={node.color}
           strokeWidth={1.5}
+          opacity={0.7}
         />
       )}
 
@@ -147,9 +148,10 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
           cx={bottomPortX}
           cy={bottomPortY}
           r={portR}
-          fill="#555"
+          fill="#1A1D25"
           stroke={node.color}
           strokeWidth={1.5}
+          opacity={0.7}
         />
       )}
 
@@ -163,13 +165,13 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
             onRemove!(node.id)
           }}
         >
-          <circle r={9} fill="#333" stroke="#666" strokeWidth={1} />
+          <circle r={9} fill="#1A1D25" stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
           <text
             textAnchor="middle"
             dominantBaseline="central"
-            fill="#f44336"
+            fill="#EF4444"
             fontSize={12}
-            fontFamily="'SF Mono', 'Fira Code', 'Cascadia Code', monospace"
+            fontFamily="'Instrument Sans', sans-serif"
             fontWeight="bold"
           >
             x
@@ -191,12 +193,12 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                 style={{
                   width: '60px',
                   padding: '2px 4px',
-                  background: '#2a2a2a',
-                  border: '1px solid #4caf50',
-                  borderRadius: '3px',
-                  color: '#e0e0e0',
+                  background: '#1A1D25',
+                  border: '1px solid #F59E0B',
+                  borderRadius: '4px',
+                  color: '#F0F0F0',
                   fontSize: '11px',
-                  fontFamily: "'SF Mono', monospace",
+                  fontFamily: "'JetBrains Mono', monospace",
                   outline: 'none',
                 }}
                 placeholder={key}

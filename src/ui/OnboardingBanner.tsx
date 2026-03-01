@@ -54,9 +54,9 @@ export function OnboardingBanner({ onQuickStart }: OnboardingBannerProps) {
 
 const styles: Record<string, React.CSSProperties> = {
   banner: {
-    background: 'linear-gradient(135deg, #1a2a1a 0%, #1a1a2a 100%)',
-    border: '1px solid #4caf50',
-    borderRadius: '8px',
+    background: 'linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)',
+    border: '1px solid var(--border-active)',
+    borderRadius: 'var(--radius-lg)',
     padding: '1.25rem',
     marginBottom: '1.5rem',
   },
@@ -67,11 +67,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: {
     fontSize: '1.1rem',
-    fontWeight: 600,
-    color: '#e0e0e0',
+    fontWeight: 700,
+    color: 'var(--text-1)',
+    fontFamily: 'var(--font-display)',
   },
   description: {
-    color: '#aaa',
+    color: 'var(--text-2)',
     fontSize: '0.9rem',
     lineHeight: 1.5,
   },

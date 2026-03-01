@@ -134,12 +134,12 @@ function isAlphaNum(ch: string | undefined): boolean {
 }
 
 const COLOR_MAP: Record<HighlightToken['type'], string | null> = {
-  property: '#82aaff',
-  string: '#c3e88d',
-  number: '#f78c6c',
-  keyword: '#c792ea',
-  punctuation: '#89ddff',
-  comment: '#676e95',
+  property: '#93C5FD',
+  string: '#BDE0A1',
+  number: '#F59E0B',
+  keyword: '#C4B5FD',
+  punctuation: '#94A3B8',
+  comment: '#4B5563',
   whitespace: null,
 }
 

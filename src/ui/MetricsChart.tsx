@@ -56,10 +56,10 @@ export function MetricsChart({
     const toY = (v: number) => pad.top + (1 - (v - yMin) / (yMax - yMin)) * plotH
 
     // Grid lines and Y labels
-    ctx.strokeStyle = '#333'
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
     ctx.lineWidth = 0.5
-    ctx.fillStyle = '#666'
-    ctx.font = '10px monospace'
+    ctx.fillStyle = '#4B5563'
+    ctx.font = "10px 'JetBrains Mono', monospace"
     ctx.textAlign = 'right'
     const nTicks = 4
     for (let i = 0; i <= nTicks; i++) {
@@ -74,7 +74,7 @@ export function MetricsChart({
 
     // X axis label
     ctx.textAlign = 'center'
-    ctx.fillStyle = '#555'
+    ctx.fillStyle = '#4B5563'
     ctx.fillText(`${data.length} steps`, W / 2, H - 2)
 
     // Parse color for gradient (convert hex to rgba)
@@ -162,23 +162,25 @@ export function MetricsChart({
 
     // Legend (top-right)
     if (secondaryLabel) {
-      const legendX = W - pad.right - 10
+      const legendRight = W - pad.right - 6
       let legendY = pad.top + 12
       ctx.textAlign = 'right'
-      ctx.font = '10px -apple-system, sans-serif'
+      ctx.font = "10px 'Instrument Sans', sans-serif"
 
-      // Primary
+      // Primary — line swatch then label
+      ctx.fillStyle = '#9CA3AF'
+      const primaryTextW = ctx.measureText(label).width
+      ctx.fillText(label, legendRight, legendY)
       ctx.fillStyle = color
-      ctx.fillRect(legendX - 40, legendY - 4, 12, 2)
-      ctx.fillStyle = '#aaa'
-      ctx.fillText(label, legendX, legendY)
+      ctx.fillRect(legendRight - primaryTextW - 16, legendY - 4, 10, 2)
       legendY += 14
 
-      // Secondary
+      // Secondary — line swatch then label
+      ctx.fillStyle = '#9CA3AF'
+      const secondaryTextW = ctx.measureText(secondaryLabel).width
+      ctx.fillText(secondaryLabel, legendRight, legendY)
       ctx.fillStyle = secondaryColor
-      ctx.fillRect(legendX - 40, legendY - 4, 12, 2)
-      ctx.fillStyle = '#aaa'
-      ctx.fillText(secondaryLabel, legendX, legendY)
+      ctx.fillRect(legendRight - secondaryTextW - 16, legendY - 4, 10, 2)
     }
   }, [data, color, formatValue, secondaryData, secondaryColor, secondaryLabel, label])
 
@@ -190,9 +192,9 @@ export function MetricsChart({
         style={{
           width: '100%',
           height: `${height}px`,
-          background: '#1a1a1a',
-          border: '1px solid #333',
-          borderRadius: '4px',
+          background: '#111318',
+          border: '1px solid rgba(255,255,255,0.06)',
+          borderRadius: '10px',
         }}
       />
     </div>

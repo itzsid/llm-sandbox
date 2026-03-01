@@ -16,30 +16,31 @@ const inspectorStyles: Record<string, React.CSSProperties> = {
     right: 0,
     top: 0,
     bottom: 0,
-    background: '#1a1a1a',
-    borderLeft: '1px solid #333',
+    background: '#111318',
+    borderLeft: '1px solid rgba(255,255,255,0.06)',
     padding: 12,
     overflowY: 'auto',
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
-    color: '#e0e0e0',
+    fontFamily: "'Instrument Sans', sans-serif",
+    color: '#F0F0F0',
     fontSize: 12,
     boxSizing: 'border-box',
   },
   placeholder: {
-    color: '#666',
+    color: '#4B5563',
     fontSize: 12,
     marginTop: 20,
     textAlign: 'center' as const,
   },
   heading: {
     fontSize: 14,
-    fontWeight: 'bold' as const,
+    fontWeight: 700,
     marginBottom: 4,
-    color: '#e0e0e0',
+    color: '#F0F0F0',
+    fontFamily: "'Bricolage Grotesque', sans-serif",
   },
   typeLabel: {
     fontSize: 11,
-    color: '#999',
+    color: '#9CA3AF',
     marginBottom: 12,
   },
   fieldGroup: {
@@ -48,49 +49,50 @@ const inspectorStyles: Record<string, React.CSSProperties> = {
   label: {
     display: 'block' as const,
     fontSize: 10,
-    color: '#999',
+    color: '#9CA3AF',
     marginBottom: 3,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.5px',
+    fontFamily: "'Instrument Sans', sans-serif",
   },
   input: {
     width: '100%',
-    background: '#2a2a2a',
-    border: '1px solid #444',
-    borderRadius: 3,
-    color: '#e0e0e0',
+    background: '#1A1D25',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 4,
+    color: '#F0F0F0',
     padding: '4px 6px',
     fontSize: 12,
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: "'JetBrains Mono', monospace",
     boxSizing: 'border-box' as const,
     outline: 'none',
   },
   inputReadonly: {
     width: '100%',
-    background: '#222',
-    border: '1px solid #333',
-    borderRadius: 3,
-    color: '#888',
+    background: '#111318',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 4,
+    color: '#4B5563',
     padding: '4px 6px',
     fontSize: 12,
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: "'JetBrains Mono', monospace",
     boxSizing: 'border-box' as const,
     outline: 'none',
   },
   select: {
     width: '100%',
-    background: '#2a2a2a',
-    border: '1px solid #444',
-    borderRadius: 3,
-    color: '#e0e0e0',
+    background: '#1A1D25',
+    border: '1px solid rgba(255,255,255,0.06)',
+    borderRadius: 4,
+    color: '#F0F0F0',
     padding: '4px 6px',
     fontSize: 12,
-    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', monospace",
+    fontFamily: "'JetBrains Mono', monospace",
     boxSizing: 'border-box' as const,
     outline: 'none',
   },
   divider: {
-    borderTop: '1px solid #333',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
     margin: '12px 0',
   },
 }
@@ -273,7 +275,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({ node, config, onCh
       case 'lm_head':
         return renderLmHeadFields()
       default:
-        return <div style={{ color: '#666', fontSize: 11 }}>No editable parameters</div>
+        return <div style={{ color: '#4B5563', fontSize: 11 }}>No editable parameters</div>
     }
   }
 
@@ -302,13 +304,13 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({ node, config, onCh
       {node.type === 'transformer_block' && layerParams > 0 && (
         <>
           <div style={inspectorStyles.divider} />
-          <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6, fontFamily: "'Instrument Sans', sans-serif" }}>
             Parameter Budget
           </div>
-          <div style={{ fontSize: 12, color: '#e0e0e0' }}>
+          <div style={{ fontSize: 12, color: '#F0F0F0', fontFamily: "'JetBrains Mono', monospace" }}>
             {layerParams.toLocaleString()} params
           </div>
-          <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>
             {layerPct}% of total ({totalParams.toLocaleString()})
           </div>
         </>

@@ -21,7 +21,7 @@ export function GpuStatus() {
           href="https://caniuse.com/webgpu"
           target="_blank"
           rel="noopener noreferrer"
-          style={{ color: '#64b5f6', fontSize: '0.75rem', marginLeft: '0.5rem' }}
+          style={{ color: 'var(--blue)', fontSize: '0.75rem', marginLeft: '0.5rem' }}
         >
           Check browser support
         </a>
