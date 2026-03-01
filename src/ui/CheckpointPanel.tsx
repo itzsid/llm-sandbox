@@ -193,6 +193,7 @@ export function CheckpointPanel({
   }, [user, onLoad])
 
   const handleDelete = useCallback(async (name: string) => {
+    if (!confirm(`Delete checkpoint "${name}"? This cannot be undone.`)) return
     setError(null)
     try {
       await deleteCheckpoint(name)
@@ -204,6 +205,7 @@ export function CheckpointPanel({
 
   const handleCloudDelete = useCallback(async (name: string) => {
     if (!user) return
+    if (!confirm(`Delete cloud checkpoint "${name}"? This cannot be undone.`)) return
     setError(null)
     try {
       await deleteCloudCheckpoint(user.uid, name)

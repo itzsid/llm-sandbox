@@ -73,6 +73,10 @@ export class Trainer {
   get step(): number { return this._step }
   get isRunning(): boolean { return this.running }
 
+  updateHyperparams(hp: Partial<TrainingHyperparams>): void {
+    this.hyperparams = { ...this.hyperparams, ...hp }
+  }
+
   private getLR(step: number): number {
     return computeLR(step, this.hyperparams)
   }
@@ -216,7 +220,7 @@ export class Trainer {
     if (!this._params || !this.optimizer) throw new Error('Not initialized')
     this.running = true
 
-    while (this.running) {
+    while (this.running && this._step < this.hyperparams.maxSteps) {
       const stepStart = performance.now()
 
       // Sample batch

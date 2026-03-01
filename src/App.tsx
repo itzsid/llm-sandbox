@@ -78,6 +78,12 @@ function App() {
       } catch {
         // ignore parse errors from saved state
       }
+      // Restore dataset selection
+      if (saved.selectedDatasetId) {
+        loadBuiltinDataset(saved.selectedDatasetId)
+          .then((ds) => setSelectedDataset(ds))
+          .catch(() => {/* dataset no longer available */})
+      }
       const ago = Math.floor((Date.now() - saved.timestamp) / 60000)
       if (ago < 60) {
         setRestoredMsg(`Restored from ${ago < 1 ? 'just now' : `${ago}m ago`}`)

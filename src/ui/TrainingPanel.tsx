@@ -142,6 +142,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       // Reuse existing trainer if available (e.g., loaded from checkpoint or previously stopped)
       const existing = trainerRef.current
       if (existing && existing.params) {
+        existing.updateHyperparams(hyperparams)
         setStatus('training')
         setTrainingStartTime(Date.now())
         await existing.train(onMetrics, onSample)
@@ -150,6 +151,19 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       }
 
       setStatus('initializing')
+
+      // Clear histories for a fresh run
+      setLossHistory([])
+      setValLossHistory([])
+      setTokensPerSecHistory([])
+      setGradNormHistory([])
+      fullLoss.current = []
+      fullValLoss.current = []
+      fullTokSec.current = []
+      fullGradNorm.current = []
+      setFullHistoryLen(0)
+      setSampleText('')
+      setMetrics(null)
 
       const legacyConfig = toLegacyConfig(config)
       const trainer = new Trainer(legacyConfig, hyperparams, config.tokenizerType)

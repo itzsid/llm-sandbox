@@ -31,7 +31,7 @@ export function PlaygroundPanel({ trainer, isTraining }: PlaygroundPanelProps) {
     setPromptLen(prompt.length)
 
     try {
-      await trainer.generateStreaming(
+      const finalText = await trainer.generateStreaming(
         maxTokens,
         temperature,
         (text) => {
@@ -43,8 +43,6 @@ export function PlaygroundPanel({ trainer, isTraining }: PlaygroundPanelProps) {
         prompt || undefined,
       )
 
-      // Get final text
-      const finalText = await trainer.generateSample(maxTokens, temperature, prompt || undefined)
       setOutput(finalText)
 
       // Add to history
