@@ -21,22 +21,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
   if (idx >= adam.size) { return; }
 
-  var g = grads[idx];
+  let g = grads[idx];
 
-  // Weight decay (decoupled, AdamW style)
-  if (adam.weight_decay > 0.0) {
-    g += adam.weight_decay * params[idx];
-  }
-
-  // Update biased first moment
+  // Update biased first moment (unmodified gradient)
   m[idx] = adam.beta1 * m[idx] + (1.0 - adam.beta1) * g;
-  // Update biased second moment
+  // Update biased second moment (unmodified gradient)
   v[idx] = adam.beta2 * v[idx] + (1.0 - adam.beta2) * g * g;
 
   // Bias-corrected estimates
   let m_hat = m[idx] / adam.beta1_corr;
   let v_hat = v[idx] / adam.beta2_corr;
 
-  // Update params
-  params[idx] -= adam.lr * m_hat / (sqrt(v_hat) + adam.eps);
+  // Adam update + decoupled weight decay (true AdamW)
+  params[idx] -= adam.lr * (m_hat / (sqrt(v_hat) + adam.eps) + adam.weight_decay * params[idx]);
 }

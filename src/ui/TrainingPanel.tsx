@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Trainer, type TrainingMetrics } from '../training/trainer'
+import type { TrainingHyperparams } from '../training/trainer'
 import { MetricsChart } from './MetricsChart'
 import { CheckpointPanel } from './CheckpointPanel'
 import { ArchitectureDiagram } from './ArchitectureDiagram'
@@ -28,18 +29,21 @@ function formatElapsed(seconds: number): string {
 interface TrainingPanelProps {
   config: ModelConfig
   dataset: Dataset | null
+  hyperparams: TrainingHyperparams
   onTrainingStateChange: (active: boolean) => void
   onTrainingStatusChange: (status: TrainingStatus) => void
   trainerRef?: React.MutableRefObject<Trainer | null>
   trainingControlRef?: React.MutableRefObject<TrainingControl | null>
 }
 
-export function TrainingPanel({ config, dataset, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef }: TrainingPanelProps) {
+export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef }: TrainingPanelProps) {
   const [status, setStatus] = useState<TrainingStatus>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
   const [valLossHistory, setValLossHistory] = useState<number[]>([])
   const [tokensPerSecHistory, setTokensPerSecHistory] = useState<number[]>([])
+  const [gradNormHistory, setGradNormHistory] = useState<number[]>([])
+  const [lrHistory, setLrHistory] = useState<number[]>([])
   const [sampleText, setSampleText] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [temperature, setTemperature] = useState(0.8)
@@ -87,7 +91,7 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
       setStatus('initializing')
 
       const legacyConfig = toLegacyConfig(config)
-      const trainer = new Trainer(legacyConfig)
+      const trainer = new Trainer(legacyConfig, hyperparams)
       setTrainer(trainer)
       await trainer.init(dataset.text)
 
@@ -98,8 +102,12 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
           setMetrics(m)
           setLossHistory((prev) => [...prev.slice(-199), m.loss])
           setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
+          setLrHistory((prev) => [...prev.slice(-199), m.learningRate])
           if (m.valLoss !== undefined) {
             setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
+          }
+          if (m.gradNorm !== undefined) {
+            setGradNormHistory((prev) => [...prev.slice(-199), m.gradNorm!])
           }
         },
         (text) => {
@@ -111,7 +119,7 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
     }
-  }, [config, dataset])
+  }, [config, dataset, hyperparams])
 
   const handleStop = useCallback(() => {
     trainerRef.current?.stop()
@@ -149,7 +157,7 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
       setStatus('initializing')
 
       const legacyConfig = checkpoint.config
-      const trainer = new Trainer(legacyConfig)
+      const trainer = new Trainer(legacyConfig, hyperparams)
       setTrainer(trainer)
       await trainer.loadFromCheckpoint(
         checkpoint.params,
@@ -165,14 +173,14 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
         step: checkpoint.step,
         loss: checkpoint.lossHistory[checkpoint.lossHistory.length - 1] ?? 0,
         tokensPerSec: 0,
-        learningRate: 3e-4,
+        learningRate: hyperparams.lr,
       })
       setStatus('stopped')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
     }
-  }, [dataset])
+  }, [dataset, hyperparams])
 
   const trainer = trainerRef.current
 
@@ -204,9 +212,15 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
               <span className="metric-label">LR</span>
               <span className="metric-value">{metrics.learningRate.toExponential(1)}</span>
             </div>
+            {metrics.gradNorm !== undefined && (
+              <div className="metric">
+                <span className="metric-label">Grad Norm</span>
+                <span className="metric-value">{metrics.gradNorm.toFixed(2)}</span>
+              </div>
+            )}
             <div className="metric">
               <span className="metric-label">Tokens Trained</span>
-              <span className="metric-value">{formatTokenCount(metrics.step * 4 * config.blockSize)}</span>
+              <span className="metric-value">{formatTokenCount(metrics.step * hyperparams.batchSize * config.blockSize)}</span>
             </div>
             {elapsedTime && (
               <div className="metric">
@@ -240,6 +254,26 @@ export function TrainingPanel({ config, dataset, onTrainingStateChange, onTraini
           color="#F59E0B"
           height={100}
           formatValue={(v) => v.toFixed(0)}
+        />
+      )}
+
+      {gradNormHistory.length > 1 && (
+        <MetricsChart
+          data={gradNormHistory}
+          label="Gradient Norm"
+          color="#A78BFA"
+          height={100}
+          formatValue={(v) => v.toFixed(2)}
+        />
+      )}
+
+      {lrHistory.length > 1 && (
+        <MetricsChart
+          data={lrHistory}
+          label="Learning Rate"
+          color="#F472B6"
+          height={100}
+          formatValue={(v) => v.toExponential(1)}
         />
       )}
 

@@ -8,7 +8,8 @@ import { FormEditor } from './ui/FormEditor'
 import { OnboardingBanner } from './ui/OnboardingBanner'
 import { ConfigSummary, type TrainingStatus } from './ui/ConfigSummary'
 import { PlaygroundPanel } from './ui/PlaygroundPanel'
-import { Trainer } from './training/trainer'
+import { Trainer, DEFAULT_HYPERPARAMS, type TrainingHyperparams } from './training/trainer'
+import { TrainingHyperparamsEditor } from './ui/TrainingHyperparamsEditor'
 import { encodeConfigToHash, decodeConfigFromHash } from './utils/config-url'
 import { loadState, saveState } from './utils/persistence'
 import { loadBuiltinDataset } from './data/datasets'
@@ -44,6 +45,7 @@ function App() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trainerRef = useRef<Trainer | null>(null)
   const trainingControlRef = useRef<TrainingControl | null>(null)
+  const [hyperparams, setHyperparams] = useState<TrainingHyperparams>(DEFAULT_HYPERPARAMS)
 
   const paramCount = useMemo(() => estimateParamCount(modelConfig), [modelConfig])
 
@@ -240,6 +242,13 @@ function App() {
                 onChange={handleVisualChange}
                 errors={configErrors}
               />
+              <div className="hp-divider" />
+              <div className="hp-section-label">Training Hyperparameters</div>
+              <TrainingHyperparamsEditor
+                hyperparams={hyperparams}
+                onChange={setHyperparams}
+                disabled={trainingActive}
+              />
             </div>
           )}
         </section>
@@ -260,6 +269,7 @@ function App() {
           <TrainingPanel
             config={modelConfig}
             dataset={selectedDataset}
+            hyperparams={hyperparams}
             onTrainingStateChange={handleTrainingStateChange}
             onTrainingStatusChange={handleTrainingStatusChange}
             trainerRef={trainerRef}

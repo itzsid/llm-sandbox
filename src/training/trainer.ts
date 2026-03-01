@@ -1,9 +1,9 @@
 import { Tensor } from '../gpu/tensor'
 import { crossEntropy } from '../gpu/ops'
 import { backward, clearTape, setGradEnabled } from '../gpu/autograd'
-import { AdamOptimizer } from '../gpu/optimizer'
+import { AdamOptimizer, type ParamGroup } from '../gpu/optimizer'
 import { CharTokenizer } from './tokenizer'
-import { initTransformer, transformerForward, getAllParams, deserializeParams, type TransformerParams } from '../model/transformer'
+import { initTransformer, transformerForward, getAllParams, getParamGroups, deserializeParams, type TransformerParams } from '../model/transformer'
 import { type TransformerConfig, NANO_GPT_CONFIG } from '../model/config'
 
 export interface TrainingMetrics {
@@ -13,6 +13,22 @@ export interface TrainingMetrics {
   valLoss?: number
   learningRate: number
   gradNorm?: number
+}
+
+export interface TrainingHyperparams {
+  lr: number
+  minLR: number
+  maxSteps: number
+  weightDecay: number
+  batchSize: number
+}
+
+export const DEFAULT_HYPERPARAMS: TrainingHyperparams = {
+  lr: 6e-4,
+  minLR: 6e-5,
+  maxSteps: 10000,
+  weightDecay: 0.1,
+  batchSize: 4,
 }
 
 export class Trainer {
@@ -25,14 +41,15 @@ export class Trainer {
   private _allParams: Tensor[] = []
   private running = false
   private _step = 0
-  private batchSize = 4
   private seqLen: number
-  private lr = 3e-4
+  private hyperparams: TrainingHyperparams
+  private maxGradNorm = 1.0
   private _lossHistory: number[] = []
 
-  constructor(config?: TransformerConfig) {
+  constructor(config?: TransformerConfig, hyperparams?: Partial<TrainingHyperparams>) {
     this._config = config ?? NANO_GPT_CONFIG
     this.seqLen = this._config.blockSize
+    this.hyperparams = { ...DEFAULT_HYPERPARAMS, ...hyperparams }
   }
 
   get config(): TransformerConfig { return this._config }
@@ -41,6 +58,53 @@ export class Trainer {
   get lossHistory(): number[] { return this._lossHistory }
   get step(): number { return this._step }
   get isRunning(): boolean { return this.running }
+
+  private getLR(step: number): number {
+    const { lr, maxSteps, minLR } = this.hyperparams
+    // Warmup-Stable-Decay (WSD): 10% warmup, 70% stable, 20% decay
+    const warmupEnd = Math.floor(maxSteps * 0.1)
+    const decayStart = Math.floor(maxSteps * 0.8)
+
+    if (step < warmupEnd) {
+      // Phase 1: Linear warmup
+      return lr * (step + 1) / (warmupEnd + 1)
+    }
+    if (step < decayStart) {
+      // Phase 2: Stable at peak LR
+      return lr
+    }
+    // Phase 3: Cosine decay to minLR
+    const decayLen = maxSteps - decayStart
+    const decayProgress = Math.min((step - decayStart) / decayLen, 1)
+    return minLR + 0.5 * (lr - minLR) * (1 + Math.cos(Math.PI * decayProgress))
+  }
+
+  private async clipGradNorm(maxNorm: number): Promise<number> {
+    let sumSq = 0
+    const grads: { param: Tensor; data: Float32Array }[] = []
+    for (const param of this._allParams) {
+      if (!param.grad) continue
+      const data = await param.grad.toArray()
+      for (let i = 0; i < data.length; i++) {
+        sumSq += data[i] * data[i]
+      }
+      grads.push({ param, data })
+    }
+    const totalNorm = Math.sqrt(sumSq)
+    if (totalNorm > maxNorm) {
+      const scale = maxNorm / (totalNorm + 1e-6)
+      for (const { param, data } of grads) {
+        for (let i = 0; i < data.length; i++) {
+          data[i] *= scale
+        }
+        // Write scaled gradients back to GPU
+        const newGrad = await Tensor.create(data, [...param.grad!.shape], { requiresGrad: false })
+        param.grad!.dispose()
+        param.grad = newGrad
+      }
+    }
+    return totalNorm
+  }
 
   async init(text: string): Promise<void> {
     this._tokenizer = new CharTokenizer()
@@ -56,7 +120,14 @@ export class Trainer {
 
     this._params = await initTransformer(this._config)
     this._allParams = getAllParams(this._params)
-    this.optimizer = new AdamOptimizer(this._allParams, { lr: this.lr, weightDecay: 0.01 })
+    const { decay, noDecay } = getParamGroups(this._params, this.hyperparams.weightDecay)
+    this.optimizer = new AdamOptimizer(
+      [
+        { params: decay, weightDecay: this.hyperparams.weightDecay },
+        { params: noDecay, weightDecay: 0 },
+      ],
+      { lr: this.hyperparams.lr },
+    )
 
     const totalParams = this._allParams.reduce((sum, p) => sum + p.size, 0)
     console.log(`Model initialized: ${totalParams.toLocaleString()} parameters`)
@@ -79,14 +150,21 @@ export class Trainer {
 
     this._params = await deserializeParams(serializedParams, config)
     this._allParams = getAllParams(this._params)
-    this.optimizer = new AdamOptimizer(this._allParams, { lr: this.lr, weightDecay: 0.01 })
+    const { decay, noDecay } = getParamGroups(this._params, this.hyperparams.weightDecay)
+    this.optimizer = new AdamOptimizer(
+      [
+        { params: decay, weightDecay: this.hyperparams.weightDecay },
+        { params: noDecay, weightDecay: 0 },
+      ],
+      { lr: this.hyperparams.lr },
+    )
     this._step = step
     this._lossHistory = [...lossHistory]
   }
 
   private sampleBatch(validation = false): { inputs: Uint32Array; targets: Uint32Array } {
     if (!this.encodedText) throw new Error('Not initialized')
-    const B = this.batchSize
+    const B = this.hyperparams.batchSize
     const T = this.seqLen
     const inputs = new Uint32Array(B * T)
     const targets = new Uint32Array(B * T)
@@ -110,8 +188,8 @@ export class Trainer {
     setGradEnabled(false)
     try {
       const { inputs, targets } = this.sampleBatch(true)
-      const inputTensor = await Tensor.fromU32(inputs, [this.batchSize, this.seqLen])
-      const targetTensor = await Tensor.fromU32(targets, [this.batchSize * this.seqLen])
+      const inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
+      const targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
       const logits = await transformerForward(this._params, inputTensor, this._config)
       const loss = await crossEntropy(logits, targetTensor)
       const val = (await loss.toArray())[0]
@@ -137,8 +215,8 @@ export class Trainer {
 
       // Sample batch
       const { inputs, targets } = this.sampleBatch(false)
-      const inputTensor = await Tensor.fromU32(inputs, [this.batchSize, this.seqLen])
-      const targetTensor = await Tensor.fromU32(targets, [this.batchSize * this.seqLen])
+      const inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
+      const targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
 
       // Forward
       setGradEnabled(true)
@@ -150,6 +228,13 @@ export class Trainer {
 
       // Backward
       await backward(loss)
+
+      // Clip gradients (also returns the norm for diagnostics)
+      const gradNorm = await this.clipGradNorm(this.maxGradNorm)
+
+      // Update learning rate schedule
+      const currentLR = this.getLR(this._step)
+      this.optimizer.setLR(currentLR)
 
       // Optimizer step
       await this.optimizer.step()
@@ -166,18 +251,19 @@ export class Trainer {
       this._lossHistory.push(lossVal)
 
       const elapsed = (performance.now() - stepStart) / 1000
-      const tokensPerSec = (this.batchSize * this.seqLen) / elapsed
+      const tokensPerSec = (this.hyperparams.batchSize * this.seqLen) / elapsed
 
       // Diagnostics: log every 10 steps
       if (this._step % 10 === 0) {
-        console.log(`[train] step=${this._step} loss=${lossVal.toFixed(4)} tok/s=${tokensPerSec.toFixed(0)} elapsed=${(elapsed * 1000).toFixed(0)}ms`)
+        console.log(`[train] step=${this._step} loss=${lossVal.toFixed(4)} lr=${currentLR.toExponential(2)} tok/s=${tokensPerSec.toFixed(0)} elapsed=${(elapsed * 1000).toFixed(0)}ms`)
       }
 
       const metrics: TrainingMetrics = {
         step: this._step,
         loss: lossVal,
         tokensPerSec,
-        learningRate: this.lr,
+        learningRate: currentLR,
+        gradNorm,
       }
 
       // Validation loss every 50 steps
@@ -187,8 +273,8 @@ export class Trainer {
 
       onMetrics(metrics)
 
-      // Generate sample every 10 steps
-      if (this._step % 10 === 0) {
+      // Generate sample every 1000 steps
+      if (this._step % 1000 === 0) {
         const sample = await this.generateSample(100)
         onSample(sample)
       }

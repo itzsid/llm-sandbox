@@ -27,11 +27,8 @@ export interface TransformerParams {
   lmHead: Tensor       // [dModel, vocabSize]
 }
 
-function xavierInit(shape: number[]): Float32Array {
+function normalInit(shape: number[], std = 0.02): Float32Array {
   const size = shape.reduce((a, b) => a * b, 1)
-  const fanIn = shape.length > 1 ? shape[shape.length - 2] : shape[0]
-  const fanOut = shape[shape.length - 1]
-  const std = Math.sqrt(2.0 / (fanIn + fanOut))
   const data = new Float32Array(size)
   for (let i = 0; i < size; i++) {
     // Box-Muller transform
@@ -45,13 +42,16 @@ function xavierInit(shape: number[]): Float32Array {
 export async function initTransformer(config: TransformerConfig): Promise<TransformerParams> {
   const { vocabSize, blockSize, nLayers, dModel, dFF } = config
 
+  // Residual projection std scaled by 1/sqrt(2*nLayers) to control variance growth (GPT-2 init)
+  const residualStd = 0.02 / Math.sqrt(2 * nLayers)
+
   const tokenEmbed = await Tensor.create(
-    xavierInit([vocabSize, dModel]),
+    normalInit([vocabSize, dModel]),
     [vocabSize, dModel],
     { requiresGrad: true },
   )
   const posEmbed = await Tensor.create(
-    xavierInit([blockSize, dModel]),
+    normalInit([blockSize, dModel]),
     [blockSize, dModel],
     { requiresGrad: true },
   )
@@ -61,15 +61,15 @@ export async function initTransformer(config: TransformerConfig): Promise<Transf
     layers.push({
       lnAttnGamma: await Tensor.ones([dModel], { requiresGrad: true }),
       lnAttnBeta: await Tensor.zeros([dModel], { requiresGrad: true }),
-      Wq: await Tensor.create(xavierInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
-      Wk: await Tensor.create(xavierInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
-      Wv: await Tensor.create(xavierInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
-      Wo: await Tensor.create(xavierInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
+      Wq: await Tensor.create(normalInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
+      Wk: await Tensor.create(normalInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
+      Wv: await Tensor.create(normalInit([dModel, dModel]), [dModel, dModel], { requiresGrad: true }),
+      Wo: await Tensor.create(normalInit([dModel, dModel], residualStd), [dModel, dModel], { requiresGrad: true }),
       lnFFGamma: await Tensor.ones([dModel], { requiresGrad: true }),
       lnFFBeta: await Tensor.zeros([dModel], { requiresGrad: true }),
-      W1: await Tensor.create(xavierInit([dModel, dFF]), [dModel, dFF], { requiresGrad: true }),
+      W1: await Tensor.create(normalInit([dModel, dFF]), [dModel, dFF], { requiresGrad: true }),
       b1: await Tensor.zeros([dFF], { requiresGrad: true }),
-      W2: await Tensor.create(xavierInit([dFF, dModel]), [dFF, dModel], { requiresGrad: true }),
+      W2: await Tensor.create(normalInit([dFF, dModel], residualStd), [dFF, dModel], { requiresGrad: true }),
       b2: await Tensor.zeros([dModel], { requiresGrad: true }),
     })
   }
@@ -77,7 +77,7 @@ export async function initTransformer(config: TransformerConfig): Promise<Transf
   const lnFinalGamma = await Tensor.ones([dModel], { requiresGrad: true })
   const lnFinalBeta = await Tensor.zeros([dModel], { requiresGrad: true })
   const lmHead = await Tensor.create(
-    xavierInit([dModel, vocabSize]),
+    normalInit([dModel, vocabSize]),
     [dModel, vocabSize],
     { requiresGrad: true },
   )
@@ -267,6 +267,30 @@ export function getAllParams(params: TransformerParams): Tensor[] {
     )
   }
   return all
+}
+
+/** Split params into weight-decay (2D weight matrices) and no-decay (biases, LayerNorm) groups */
+export function getParamGroups(params: TransformerParams, weightDecay: number): { decay: Tensor[]; noDecay: Tensor[] } {
+  // 2D+ weight matrices get weight decay
+  const decay: Tensor[] = [
+    params.tokenEmbed,
+    params.posEmbed,
+    params.lmHead,
+  ]
+  // 1D params (biases, LayerNorm gamma/beta) get zero weight decay
+  const noDecay: Tensor[] = [
+    params.lnFinalGamma,
+    params.lnFinalBeta,
+  ]
+  for (const layer of params.layers) {
+    decay.push(layer.Wq, layer.Wk, layer.Wv, layer.Wo, layer.W1, layer.W2)
+    noDecay.push(
+      layer.lnAttnGamma, layer.lnAttnBeta,
+      layer.lnFFGamma, layer.lnFFBeta,
+      layer.b1, layer.b2,
+    )
+  }
+  return { decay, noDecay }
 }
 
 export async function serializeParams(
