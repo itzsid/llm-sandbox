@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { Trainer, type TrainingMetrics } from '../training/trainer'
 import type { TrainingHyperparams } from '../training/trainer'
 import { MetricsChart } from './MetricsChart'
+import { LRScheduleChart } from './LRScheduleChart'
 import { CheckpointPanel } from './CheckpointPanel'
 import { ArchitectureDiagram } from './ArchitectureDiagram'
 import { toLegacyConfig } from '../model/schema'
@@ -15,6 +16,21 @@ function formatTokenCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
   if (count >= 1_000) return `${(count / 1_000).toFixed(0)}K`
   return String(count)
+}
+
+/** Downsamples an array to at most maxPoints using bucket averaging */
+function downsample(data: number[], maxPoints: number): number[] {
+  if (data.length <= maxPoints) return data
+  const bucketSize = data.length / maxPoints
+  const result: number[] = []
+  for (let i = 0; i < maxPoints; i++) {
+    const start = Math.floor(i * bucketSize)
+    const end = Math.floor((i + 1) * bucketSize)
+    let sum = 0
+    for (let j = start; j < end; j++) sum += data[j]
+    result.push(sum / (end - start))
+  }
+  return result
 }
 
 function formatElapsed(seconds: number): string {
@@ -43,16 +59,24 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
   const [valLossHistory, setValLossHistory] = useState<number[]>([])
   const [tokensPerSecHistory, setTokensPerSecHistory] = useState<number[]>([])
   const [gradNormHistory, setGradNormHistory] = useState<number[]>([])
-  const [lrHistory, setLrHistory] = useState<number[]>([])
   const [sampleText, setSampleText] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [temperature, setTemperature] = useState(0.8)
   const [maxTokens, setMaxTokens] = useState(100)
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
+  const [zoomedOut, setZoomedOut] = useState(false)
   const [trainingStartTime, setTrainingStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState<string>('')
   const trainerRef = useRef<Trainer | null>(null)
+
+  // Full history refs (append-only, never in React state to avoid memory pressure from re-renders)
+  const fullLoss = useRef<number[]>([])
+  const fullValLoss = useRef<number[]>([])
+  const fullTokSec = useRef<number[]>([])
+  const fullGradNorm = useRef<number[]>([])
+  // Counter to trigger re-render when zoomed out
+  const [fullHistoryLen, setFullHistoryLen] = useState(0)
 
   // Sync trainer to external ref
   const setTrainer = useCallback((trainer: Trainer | null) => {
@@ -100,15 +124,22 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       await trainer.train(
         (m) => {
           setMetrics(m)
+          // Rolling window for default (zoomed-in) view
           setLossHistory((prev) => [...prev.slice(-199), m.loss])
           setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
-          setLrHistory((prev) => [...prev.slice(-199), m.learningRate])
           if (m.valLoss !== undefined) {
             setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
           }
           if (m.gradNorm !== undefined) {
             setGradNormHistory((prev) => [...prev.slice(-199), m.gradNorm!])
           }
+          // Append to full history refs (cheap, no re-render)
+          fullLoss.current.push(m.loss)
+          fullTokSec.current.push(m.tokensPerSec)
+          if (m.valLoss !== undefined) fullValLoss.current.push(m.valLoss)
+          if (m.gradNorm !== undefined) fullGradNorm.current.push(m.gradNorm)
+          // Update length counter every 50 steps (only matters when zoomed out)
+          if (fullLoss.current.length % 50 === 0) setFullHistoryLen(fullLoss.current.length)
         },
         (text) => {
           setSampleText(text)
@@ -169,6 +200,8 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       )
 
       setLossHistory(checkpoint.lossHistory.slice(-200))
+      fullLoss.current = [...checkpoint.lossHistory]
+      setFullHistoryLen(fullLoss.current.length)
       setMetrics({
         step: checkpoint.step,
         loss: checkpoint.lossHistory[checkpoint.lossHistory.length - 1] ?? 0,
@@ -183,6 +216,14 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
   }, [dataset, hyperparams])
 
   const trainer = trainerRef.current
+
+  // Downsampled full history for zoomed-out view (max 500 points)
+  const dsLoss = zoomedOut ? downsample(fullLoss.current, 500) : lossHistory
+  const dsValLoss = zoomedOut ? downsample(fullValLoss.current, 500) : valLossHistory
+  const dsTokSec = zoomedOut ? downsample(fullTokSec.current, 500) : tokensPerSecHistory
+  const dsGradNorm = zoomedOut ? downsample(fullGradNorm.current, 500) : gradNormHistory
+  // suppress lint: fullHistoryLen is used to trigger re-computation of downsampled arrays above
+  void fullHistoryLen
 
   return (
     <div className="training-panel">
@@ -235,21 +276,41 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       {error && <div className="error-msg">{error}</div>}
 
       {lossHistory.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+          <button
+            onClick={() => setZoomedOut((z) => !z)}
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-2)',
+              fontSize: '0.75rem',
+              padding: '0.25rem 0.6rem',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            {zoomedOut ? `Last 200 steps` : `All ${fullLoss.current.length} steps`}
+          </button>
+        </div>
+      )}
+
+      {dsLoss.length > 1 && (
         <MetricsChart
-          data={lossHistory}
+          data={dsLoss}
           label="Train Loss"
           color="#22C55E"
           height={160}
           formatValue={(v) => v.toFixed(2)}
-          secondaryData={valLossHistory.length > 1 ? valLossHistory : undefined}
+          secondaryData={dsValLoss.length > 1 ? dsValLoss : undefined}
           secondaryColor="#60A5FA"
           secondaryLabel="Val Loss"
         />
       )}
 
-      {tokensPerSecHistory.length > 1 && (
+      {dsTokSec.length > 1 && (
         <MetricsChart
-          data={tokensPerSecHistory}
+          data={dsTokSec}
           label="Tokens/sec"
           color="#F59E0B"
           height={100}
@@ -257,9 +318,9 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         />
       )}
 
-      {gradNormHistory.length > 1 && (
+      {dsGradNorm.length > 1 && (
         <MetricsChart
-          data={gradNormHistory}
+          data={dsGradNorm}
           label="Gradient Norm"
           color="#A78BFA"
           height={100}
@@ -267,15 +328,11 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         />
       )}
 
-      {lrHistory.length > 1 && (
-        <MetricsChart
-          data={lrHistory}
-          label="Learning Rate"
-          color="#F472B6"
-          height={100}
-          formatValue={(v) => v.toExponential(1)}
-        />
-      )}
+      <LRScheduleChart
+        hyperparams={hyperparams}
+        currentStep={metrics?.step ?? 0}
+        height={100}
+      />
 
       {/* 2-column: generation + sidebar */}
       <div className="training-layout">

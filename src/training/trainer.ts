@@ -31,6 +31,18 @@ export const DEFAULT_HYPERPARAMS: TrainingHyperparams = {
   batchSize: 4,
 }
 
+/** Compute LR at a given step using the WSD schedule */
+export function computeLR(step: number, hp: TrainingHyperparams): number {
+  const { lr, maxSteps, minLR } = hp
+  const warmupEnd = Math.floor(maxSteps * 0.1)
+  const decayStart = Math.floor(maxSteps * 0.8)
+  if (step < warmupEnd) return lr * (step + 1) / (warmupEnd + 1)
+  if (step < decayStart) return lr
+  const decayLen = maxSteps - decayStart
+  const decayProgress = Math.min((step - decayStart) / decayLen, 1)
+  return minLR + 0.5 * (lr - minLR) * (1 + Math.cos(Math.PI * decayProgress))
+}
+
 export class Trainer {
   private _config: TransformerConfig
   private _tokenizer: CharTokenizer | null = null
@@ -60,23 +72,7 @@ export class Trainer {
   get isRunning(): boolean { return this.running }
 
   private getLR(step: number): number {
-    const { lr, maxSteps, minLR } = this.hyperparams
-    // Warmup-Stable-Decay (WSD): 10% warmup, 70% stable, 20% decay
-    const warmupEnd = Math.floor(maxSteps * 0.1)
-    const decayStart = Math.floor(maxSteps * 0.8)
-
-    if (step < warmupEnd) {
-      // Phase 1: Linear warmup
-      return lr * (step + 1) / (warmupEnd + 1)
-    }
-    if (step < decayStart) {
-      // Phase 2: Stable at peak LR
-      return lr
-    }
-    // Phase 3: Cosine decay to minLR
-    const decayLen = maxSteps - decayStart
-    const decayProgress = Math.min((step - decayStart) / decayLen, 1)
-    return minLR + 0.5 * (lr - minLR) * (1 + Math.cos(Math.PI * decayProgress))
+    return computeLR(step, this.hyperparams)
   }
 
   private async clipGradNorm(maxNorm: number): Promise<number> {
