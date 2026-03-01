@@ -1,9 +1,10 @@
 import { serializeParams, deserializeParams } from '../model/transformer'
 import type { TransformerConfig } from '../model/config'
 import type { TokenizerState } from '../training/tokenizer'
+import type { TrainingHyperparams } from '../training/trainer'
 
 export interface Checkpoint {
-  version: number  // 2
+  version: number  // 3
   name: string
   config: TransformerConfig
   step: number
@@ -12,6 +13,8 @@ export interface Checkpoint {
   tokenizer: TokenizerState
   datasetId: string
   savedAt: number
+  hyperparams?: TrainingHyperparams
+  valLossHistory?: number[]
 }
 
 const DB_NAME = 'llm-sandbox'
@@ -74,7 +77,7 @@ function fromStorable(stored: any): Checkpoint {
   }
 
   return {
-    version: 2,
+    version: 3,
     name: stored.name,
     config: stored.config,
     step: stored.step,
@@ -83,6 +86,8 @@ function fromStorable(stored: any): Checkpoint {
     tokenizer,
     datasetId: stored.datasetId,
     savedAt: stored.savedAt,
+    hyperparams: stored.hyperparams,
+    valLossHistory: stored.valLossHistory,
   }
 }
 
@@ -177,7 +182,7 @@ export function exportCheckpoint(checkpoint: Checkpoint): Blob {
   }
 
   const metadata = JSON.stringify({
-    version: 2,
+    version: 3,
     name: checkpoint.name,
     config: checkpoint.config,
     step: checkpoint.step,
@@ -185,6 +190,8 @@ export function exportCheckpoint(checkpoint: Checkpoint): Blob {
     tokenizer: checkpoint.tokenizer,
     datasetId: checkpoint.datasetId,
     savedAt: checkpoint.savedAt,
+    hyperparams: checkpoint.hyperparams,
+    valLossHistory: checkpoint.valLossHistory,
     paramEntries,
   })
 
@@ -250,7 +257,7 @@ export function importCheckpointFromBuffer(arrayBuffer: ArrayBuffer): Checkpoint
   }
 
   return {
-    version: 2,
+    version: 3,
     name: metadata.name,
     config: metadata.config,
     step: metadata.step,
@@ -259,6 +266,8 @@ export function importCheckpointFromBuffer(arrayBuffer: ArrayBuffer): Checkpoint
     tokenizer,
     datasetId: metadata.datasetId,
     savedAt: metadata.savedAt,
+    hyperparams: metadata.hyperparams,
+    valLossHistory: metadata.valLossHistory,
   }
 }
 

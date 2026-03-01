@@ -102,6 +102,14 @@ export async function loadCloudCheckpoint(
     offset += chunkBytes.length
   })
 
+  // Validate reassembly
+  if (chunkSnap.size !== meta.totalChunks) {
+    throw new Error(`Checkpoint "${name}" is corrupted: expected ${meta.totalChunks} chunks but found ${chunkSnap.size}`)
+  }
+  if (offset !== totalSize) {
+    throw new Error(`Checkpoint "${name}" is corrupted: expected ${totalSize} bytes but reassembled ${offset}`)
+  }
+
   return importCheckpointFromBuffer(assembled.buffer)
 }
 

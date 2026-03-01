@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Trainer, type TrainingMetrics } from '../training/trainer'
+import { Trainer, computeLR, type TrainingMetrics } from '../training/trainer'
 import type { TrainingHyperparams } from '../training/trainer'
 import { MetricsChart } from './MetricsChart'
 import { LRScheduleChart } from './LRScheduleChart'
@@ -107,6 +107,30 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
     return () => clearInterval(interval)
   }, [isTraining, trainingStartTime])
 
+  const onMetrics = useCallback((m: TrainingMetrics) => {
+    setMetrics(m)
+    // Rolling window for default (zoomed-in) view
+    setLossHistory((prev) => [...prev.slice(-199), m.loss])
+    setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
+    if (m.valLoss !== undefined) {
+      setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
+    }
+    if (m.gradNorm !== undefined) {
+      setGradNormHistory((prev) => [...prev.slice(-199), m.gradNorm!])
+    }
+    // Append to full history refs (cheap, no re-render)
+    fullLoss.current.push(m.loss)
+    fullTokSec.current.push(m.tokensPerSec)
+    if (m.valLoss !== undefined) fullValLoss.current.push(m.valLoss)
+    if (m.gradNorm !== undefined) fullGradNorm.current.push(m.gradNorm)
+    // Update length counter every 50 steps (only matters when zoomed out)
+    if (fullLoss.current.length % 50 === 0) setFullHistoryLen(fullLoss.current.length)
+  }, [])
+
+  const onSample = useCallback((text: string) => {
+    setSampleText(text)
+  }, [])
+
   const handleStart = useCallback(async () => {
     if (!dataset) {
       setError('Select a dataset first')
@@ -114,6 +138,17 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
     }
     try {
       setError(null)
+
+      // Reuse existing trainer if available (e.g., loaded from checkpoint or previously stopped)
+      const existing = trainerRef.current
+      if (existing && existing.params) {
+        setStatus('training')
+        setTrainingStartTime(Date.now())
+        await existing.train(onMetrics, onSample)
+        setStatus('stopped')
+        return
+      }
+
       setStatus('initializing')
 
       const legacyConfig = toLegacyConfig(config)
@@ -123,36 +158,13 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
 
       setStatus('training')
       setTrainingStartTime(Date.now())
-      await trainer.train(
-        (m) => {
-          setMetrics(m)
-          // Rolling window for default (zoomed-in) view
-          setLossHistory((prev) => [...prev.slice(-199), m.loss])
-          setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
-          if (m.valLoss !== undefined) {
-            setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
-          }
-          if (m.gradNorm !== undefined) {
-            setGradNormHistory((prev) => [...prev.slice(-199), m.gradNorm!])
-          }
-          // Append to full history refs (cheap, no re-render)
-          fullLoss.current.push(m.loss)
-          fullTokSec.current.push(m.tokensPerSec)
-          if (m.valLoss !== undefined) fullValLoss.current.push(m.valLoss)
-          if (m.gradNorm !== undefined) fullGradNorm.current.push(m.gradNorm)
-          // Update length counter every 50 steps (only matters when zoomed out)
-          if (fullLoss.current.length % 50 === 0) setFullHistoryLen(fullLoss.current.length)
-        },
-        (text) => {
-          setSampleText(text)
-        },
-      )
+      await trainer.train(onMetrics, onSample)
       setStatus('stopped')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
     }
-  }, [config, dataset, hyperparams])
+  }, [config, dataset, hyperparams, onMetrics, onSample])
 
   const handleStop = useCallback(() => {
     trainerRef.current?.stop()
@@ -189,8 +201,9 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       setError(null)
       setStatus('initializing')
 
+      const restoredHp = checkpoint.hyperparams ?? hyperparams
       const legacyConfig = checkpoint.config
-      const trainer = new Trainer(legacyConfig, hyperparams)
+      const trainer = new Trainer(legacyConfig, restoredHp)
       setTrainer(trainer)
       await trainer.loadFromCheckpoint(
         checkpoint.params,
@@ -199,16 +212,24 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         checkpoint.lossHistory,
         checkpoint.tokenizer,
         dataset.text,
+        checkpoint.hyperparams,
       )
 
       setLossHistory(checkpoint.lossHistory.slice(-200))
       fullLoss.current = [...checkpoint.lossHistory]
       setFullHistoryLen(fullLoss.current.length)
+
+      // Restore validation loss history if present
+      if (checkpoint.valLossHistory && checkpoint.valLossHistory.length > 0) {
+        setValLossHistory(checkpoint.valLossHistory.slice(-50))
+        fullValLoss.current = [...checkpoint.valLossHistory]
+      }
+
       setMetrics({
         step: checkpoint.step,
         loss: checkpoint.lossHistory[checkpoint.lossHistory.length - 1] ?? 0,
         tokensPerSec: 0,
-        learningRate: hyperparams.lr,
+        learningRate: computeLR(checkpoint.step, restoredHp),
       })
       setStatus('stopped')
     } catch (e) {
@@ -411,7 +432,9 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
             params={trainer?.params ?? null}
             config={trainer?.config ?? toLegacyConfig(config)}
             step={trainer?.step ?? 0}
-            lossHistory={lossHistory}
+            lossHistory={fullLoss.current}
+            valLossHistory={fullValLoss.current}
+            hyperparams={hyperparams}
             tokenizerState={trainer?.tokenizer?.getState() ?? { type: config.tokenizerType ?? 'bpe-gpt2' }}
             datasetId={dataset?.id ?? ''}
             onLoad={handleCheckpointLoad}

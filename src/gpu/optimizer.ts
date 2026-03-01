@@ -62,6 +62,10 @@ export class AdamOptimizer {
     this.config.lr = lr
   }
 
+  setStep(step: number): void {
+    this.step_ = step
+  }
+
   async step(): Promise<void> {
     this.step_++
     const device = await getGPUDevice()

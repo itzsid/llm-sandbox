@@ -138,7 +138,13 @@ export class Trainer {
     lossHistory: number[],
     tokenizerState: TokenizerState,
     text: string,
+    checkpointHyperparams?: TrainingHyperparams,
   ): Promise<void> {
+    // Use checkpoint hyperparams if available, otherwise keep current
+    if (checkpointHyperparams) {
+      this.hyperparams = { ...checkpointHyperparams }
+    }
+
     this._tokenizer = restoreTokenizer(tokenizerState, text)
     this._tokenizerType = tokenizerState.type
     this._config = config
@@ -156,6 +162,8 @@ export class Trainer {
       ],
       { lr: this.hyperparams.lr },
     )
+    // Restore optimizer step counter for correct Adam bias correction
+    this.optimizer.setStep(step)
     this._step = step
     this._lossHistory = [...lossHistory]
   }
