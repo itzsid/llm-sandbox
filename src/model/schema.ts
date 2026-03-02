@@ -26,6 +26,7 @@ export interface ConfigError {
   path: string    // e.g. "blockSize", "layers[0].dModel"
   message: string
   suggestion?: string
+  severity?: 'error' | 'warning'  // defaults to 'error'
 }
 
 // ---- Validation ----
@@ -110,6 +111,7 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
           path: 'tokenizerType',
           message: `GPT-2 tokenizer (50257 vocab) creates a ${(embeddingParams / 1e6).toFixed(1)}M param embedding — over half your ${(totalEstimate / 1e6).toFixed(1)}M model`,
           suggestion: 'Consider using "char" tokenizer or setting a smaller explicit vocabSize for tiny models',
+          severity: 'warning',
         })
       }
     }

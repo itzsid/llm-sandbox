@@ -61,7 +61,7 @@ function App() {
       const errors = validateConfig(hashConfig)
       setConfigText(configToText(hashConfig))
       setConfigErrors(errors)
-      if (errors.length === 0) {
+      if (errors.every(e => e.severity === 'warning')) {
         setModelConfig(hashConfig)
       }
       // Clear the hash
@@ -78,7 +78,7 @@ function App() {
         const parsed = textToConfig(saved.configText)
         const errors = validateConfig(parsed)
         setConfigErrors(errors)
-        if (errors.length === 0) setModelConfig(parsed)
+        if (errors.every(e => e.severity === 'warning')) setModelConfig(parsed)
       } catch {
         // ignore parse errors from saved state
       }
@@ -119,7 +119,7 @@ function App() {
       const parsed = textToConfig(text)
       const errors = validateConfig(parsed)
       setConfigErrors(errors)
-      if (errors.length === 0) {
+      if (errors.every(e => e.severity === 'warning')) {
         setModelConfig(parsed)
       }
     } catch {
@@ -162,7 +162,7 @@ function App() {
     const nano = PRESETS.nano
     setModelConfig(nano)
     setConfigText(configToText(nano))
-    setConfigErrors([])
+    setConfigErrors(validateConfig(nano))
     try {
       const dataset = await loadBuiltinDataset('tiny-shakespeare')
       setSelectedDataset(dataset)

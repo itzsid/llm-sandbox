@@ -211,6 +211,7 @@ export function CodeEditor({ value, onChange, errors, paramCount, onShare }: Cod
         <div ref={gutterRef} style={styles.gutter}>
           {Array.from({ length: lineCount }, (_, i) => {
             const lineErrors = errorLineMap.get(i)
+            const isWarningOnly = lineErrors?.every(e => e.severity === 'warning')
             return (
               <div
                 key={i}
@@ -218,7 +219,7 @@ export function CodeEditor({ value, onChange, errors, paramCount, onShare }: Cod
                 title={lineErrors ? lineErrors.map((e) => `${e.message}${e.suggestion ? `\n${e.suggestion}` : ''}`).join('\n') : undefined}
               >
                 {lineErrors ? (
-                  <span style={styles.gutterMarker}>!</span>
+                  <span style={isWarningOnly ? styles.gutterMarkerWarning : styles.gutterMarker}>!</span>
                 ) : null}
               </div>
             )
@@ -249,8 +250,8 @@ export function CodeEditor({ value, onChange, errors, paramCount, onShare }: Cod
       {errors.length > 0 && (
         <div style={styles.errorList}>
           {errors.map((err, i) => (
-            <div key={i} style={styles.errorItem}>
-              <span style={styles.errorPath}>{err.path}:</span> {err.message}
+            <div key={i} style={err.severity === 'warning' ? styles.warningItem : styles.errorItem}>
+              <span style={err.severity === 'warning' ? styles.warningPath : styles.errorPath}>{err.path}:</span> {err.message}
               {err.suggestion && (
                 <div style={styles.errorSuggestion}>{err.suggestion}</div>
               )}
@@ -355,6 +356,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11px',
     cursor: 'help',
   },
+  gutterMarkerWarning: {
+    color: 'var(--amber)',
+    fontWeight: 'bold' as const,
+    fontSize: '11px',
+    cursor: 'help',
+  },
   pre: {
     ...sharedEditorStyle,
     position: 'absolute' as const,
@@ -392,8 +399,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.8rem',
     fontFamily: monoFont,
   },
+  warningItem: {
+    color: 'var(--amber)',
+    fontSize: '0.8rem',
+    fontFamily: monoFont,
+  },
   errorPath: {
     color: '#FDBA74',
+    fontWeight: 600,
+  },
+  warningPath: {
+    color: 'var(--amber)',
     fontWeight: 600,
   },
   errorSuggestion: {

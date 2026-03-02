@@ -72,6 +72,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
   const [trainingStartTime, setTrainingStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState<string>('')
   const trainerRef = useRef<Trainer | null>(null)
+  const startingRef = useRef(false)  // guard against concurrent handleStart calls
 
   // Full history refs (append-only, never in React state to avoid memory pressure from re-renders)
   const fullLoss = useRef<number[]>([])
@@ -149,6 +150,9 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       setError('Select a dataset first')
       return
     }
+    // Prevent concurrent starts
+    if (startingRef.current) return
+    startingRef.current = true
     try {
       setError(null)
 
@@ -190,6 +194,8 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
+    } finally {
+      startingRef.current = false
     }
   }, [config, dataset, hyperparams, onMetrics, onSample, setTrainer])
 

@@ -28,7 +28,9 @@ export function ConfigSummary({
   onStart,
   onStop,
 }: ConfigSummaryProps) {
-  const hasErrors = errors.length > 0
+  const blockingErrors = errors.filter(e => e.severity !== 'warning')
+  const warnings = errors.filter(e => e.severity === 'warning')
+  const hasErrors = blockingErrors.length > 0
   const isTraining = trainingStatus === 'training'
   const isInitializing = trainingStatus === 'initializing'
   const canStart = !hasErrors && !!dataset && !isTraining && !isInitializing
@@ -76,7 +78,15 @@ export function ConfigSummary({
           <div className="config-summary-item config-summary-errors">
             <span className="config-summary-label">Errors</span>
             <span className="config-summary-value" style={{ color: 'var(--red)' }}>
-              {errors.length} {errors.length === 1 ? 'issue' : 'issues'}
+              {blockingErrors.length} {blockingErrors.length === 1 ? 'issue' : 'issues'}
+            </span>
+          </div>
+        )}
+        {!hasErrors && warnings.length > 0 && (
+          <div className="config-summary-item">
+            <span className="config-summary-label">Warnings</span>
+            <span className="config-summary-value" style={{ color: 'var(--amber)' }}>
+              {warnings.length}
             </span>
           </div>
         )}

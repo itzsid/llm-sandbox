@@ -1,5 +1,5 @@
 import { Tensor } from '../gpu/tensor'
-import { add, matmul, gelu, layernorm, embedding, multiHeadAttention } from '../gpu/ops'
+import { add, matmul, gelu, layernorm, embedding, multiHeadAttention, transpose } from '../gpu/ops'
 import { isGradEnabled, recordOp } from '../gpu/autograd'
 import type { TransformerConfig } from './config'
 
@@ -211,8 +211,15 @@ export async function transformerForward(
   // When training: x kept alive — layernorm backward needs input.buffer
 
   // LM head: [B*T, dModel] @ [dModel, vocabSize] -> [B*T, vocabSize]
-  const logits = await matmul(normedFinal, params.lmHead)
-  if (!training) normedFinal.dispose()
+  // When tieWeights, lmHead is tokenEmbed [vocabSize, dModel] — needs transpose
+  const lmWeight = config.tieWeights
+    ? await transpose(params.lmHead)  // [vocabSize, dModel] -> [dModel, vocabSize]
+    : params.lmHead                   // already [dModel, vocabSize]
+  const logits = await matmul(normedFinal, lmWeight)
+  if (!training) {
+    normedFinal.dispose()
+    if (config.tieWeights) lmWeight.dispose()
+  }
   // When training: normedFinal kept alive — matmul backward needs it
 
   return logits
