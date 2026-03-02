@@ -315,7 +315,7 @@ export const PRESETS: Record<string, ModelConfig> = {
       .fill(null)
       .map(() => makeLayerConfig(64, 4, 256)),
     tieWeights: true,
-    tokenizerType: 'bpe-gpt2',
+    tokenizerType: 'char',
   },
   nano: {
     name: 'Nano',
@@ -325,7 +325,7 @@ export const PRESETS: Record<string, ModelConfig> = {
       .fill(null)
       .map(() => makeLayerConfig(128, 4, 512)),
     tieWeights: true,
-    tokenizerType: 'bpe-gpt2',
+    tokenizerType: 'char',
   },
   micro: {
     name: 'Micro',
@@ -335,6 +335,6 @@ export const PRESETS: Record<string, ModelConfig> = {
       .fill(null)
       .map(() => makeLayerConfig(256, 8, 1024)),
     tieWeights: true,
-    tokenizerType: 'bpe-gpt2',
+    tokenizerType: 'char',
   },
 }
