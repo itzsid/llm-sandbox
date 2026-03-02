@@ -68,6 +68,8 @@ export function CheckpointPanel({
   const [cloudSaving, setCloudSaving] = useState(false)
   const [cloudLoading, setCloudLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cloudListLoading, setCloudListLoading] = useState(false)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
   const refreshList = useCallback(async () => {
     try {
@@ -80,11 +82,14 @@ export function CheckpointPanel({
 
   const refreshCloudList = useCallback(async () => {
     if (!user) return
+    setCloudListLoading(true)
     try {
       const list = await listCloudCheckpoints(user.uid)
       setCloudCheckpoints(list)
     } catch (e) {
       console.error('Failed to list cloud checkpoints:', e)
+    } finally {
+      setCloudListLoading(false)
     }
   }, [user])
 
@@ -107,6 +112,10 @@ export function CheckpointPanel({
 
   const handleSave = useCallback(async () => {
     if (!params || !saveName.trim()) return
+    const trimmed = saveName.trim()
+    if (checkpoints.some((cp) => cp.name === trimmed)) {
+      if (!confirm(`A checkpoint named "${trimmed}" already exists. Overwrite?`)) return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -128,15 +137,22 @@ export function CheckpointPanel({
       setSaveName('')
       setShowSaveInput(false)
       await refreshList()
+      setError(null)
+      setSuccessMsg('Checkpoint saved!')
+      setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
     }
-  }, [params, saveName, config, step, lossHistory, valLossHistory, hyperparams, tokenizerState, datasetId, refreshList])
+  }, [params, saveName, config, step, lossHistory, valLossHistory, hyperparams, tokenizerState, datasetId, refreshList, checkpoints])
 
   const handleCloudSave = useCallback(async () => {
     if (!params || !saveName.trim() || !user) return
+    const trimmed = saveName.trim()
+    if (cloudCheckpoints.some((cp) => cp.name === trimmed)) {
+      if (!confirm(`A cloud checkpoint named "${trimmed}" already exists. Overwrite?`)) return
+    }
     setCloudSaving(true)
     setError(null)
     try {
@@ -158,12 +174,15 @@ export function CheckpointPanel({
       setSaveName('')
       setShowSaveInput(false)
       await refreshCloudList()
+      setError(null)
+      setSuccessMsg('Checkpoint saved to cloud!')
+      setTimeout(() => setSuccessMsg(null), 3000)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setCloudSaving(false)
     }
-  }, [params, saveName, config, step, lossHistory, valLossHistory, hyperparams, tokenizerState, datasetId, user, refreshCloudList])
+  }, [params, saveName, config, step, lossHistory, valLossHistory, hyperparams, tokenizerState, datasetId, user, refreshCloudList, cloudCheckpoints])
 
   const handleLoad = useCallback(async (name: string) => {
     setLoading(name)
@@ -271,13 +290,13 @@ export function CheckpointPanel({
       {user && (
         <div style={styles.tabBar}>
           <button
-            onClick={() => setActiveTab('local')}
+            onClick={() => { setActiveTab('local'); setError(null); setSuccessMsg(null) }}
             style={{ ...styles.tabBtn, ...(activeTab === 'local' ? styles.tabActive : {}) }}
           >
             Local
           </button>
           <button
-            onClick={() => setActiveTab('cloud')}
+            onClick={() => { setActiveTab('cloud'); setError(null); setSuccessMsg(null) }}
             style={{ ...styles.tabBtn, ...(activeTab === 'cloud' ? styles.tabActive : {}) }}
           >
             Cloud
@@ -286,6 +305,7 @@ export function CheckpointPanel({
       )}
 
       {error && <div style={styles.error}>{error}</div>}
+      {successMsg && <div style={{ color: 'var(--green, #22c55e)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{successMsg}</div>}
 
       <div style={styles.actions}>
         {showSaveInput ? (
@@ -390,7 +410,9 @@ export function CheckpointPanel({
       {/* Cloud checkpoint list */}
       {isCloud && (
         <>
-          {cloudCheckpoints.length === 0 ? (
+          {cloudListLoading ? (
+            <div style={{ color: 'var(--text-3)', padding: '1rem', textAlign: 'center' }}>Loading checkpoints...</div>
+          ) : cloudCheckpoints.length === 0 ? (
             <div style={styles.emptyMsg}>No cloud checkpoints</div>
           ) : (
             <div style={styles.list}>

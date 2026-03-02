@@ -111,13 +111,40 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({ node, config, onCh
     )
   }
 
-  // Helper: update a field on a specific transformer block layer
+  // Fields that must be uniform across all layers
+  const uniformFields = ['dModel', 'nHeads', 'dFF']
+
+  // Helper: update a field on transformer block layer(s)
+  // For uniform fields (dModel, nHeads, dFF), update ALL layers to keep them consistent.
+  // For dModel changes, auto-adjust nHeads to the closest valid divisor.
   const updateLayerField = (layerIndex: number, field: string, value: number | string) => {
-    const newLayers = config.layers.map((layer, i) => {
-      if (i !== layerIndex) return layer
-      return { ...layer, [field]: value }
-    })
-    onChange({ ...config, layers: newLayers })
+    if (field === 'dModel' && typeof value === 'number') {
+      // Mirror FormEditor's handleDModelChange: update all layers and auto-adjust nHeads
+      const newLayers = config.layers.map((layer) => {
+        const newLayer = { ...layer, dModel: value }
+        if (value > 0 && layer.nHeads > 0 && value % layer.nHeads !== 0) {
+          for (let h = layer.nHeads; h >= 1; h--) {
+            if (value % h === 0) {
+              newLayer.nHeads = h
+              break
+            }
+          }
+        }
+        return newLayer
+      })
+      onChange({ ...config, layers: newLayers })
+    } else if (uniformFields.includes(field)) {
+      // Update all layers for uniform fields
+      const newLayers = config.layers.map((layer) => ({ ...layer, [field]: value }))
+      onChange({ ...config, layers: newLayers })
+    } else {
+      // Non-uniform fields: update only the specific layer
+      const newLayers = config.layers.map((layer, i) => {
+        if (i !== layerIndex) return layer
+        return { ...layer, [field]: value }
+      })
+      onChange({ ...config, layers: newLayers })
+    }
   }
 
   // Helper: update a top-level config field

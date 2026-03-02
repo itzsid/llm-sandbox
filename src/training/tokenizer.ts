@@ -47,10 +47,11 @@ export class CharTokenizer implements Tokenizer {
   }
 
   encode(text: string): Uint32Array {
-    const ids = new Uint32Array(text.length)
-    for (let i = 0; i < text.length; i++) {
-      const idx = this.charToIdx.get(text[i])
-      if (idx === undefined) throw new Error(`Unknown character: ${text[i]}`)
+    const codePoints = Array.from(text)
+    const ids = new Uint32Array(codePoints.length)
+    for (let i = 0; i < codePoints.length; i++) {
+      const idx = this.charToIdx.get(codePoints[i])
+      if (idx === undefined) throw new Error(`Unknown character: ${codePoints[i]}`)
       ids[i] = idx
     }
     return ids

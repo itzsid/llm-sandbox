@@ -5,6 +5,7 @@ export interface TransformerConfig {
   nHeads: number
   dModel: number
   dFF: number
+  tieWeights?: boolean
 }
 
 export const NANO_GPT_CONFIG: TransformerConfig = {

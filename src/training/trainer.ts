@@ -53,6 +53,7 @@ export class Trainer {
   private optimizer: AdamOptimizer | null = null
   private _allParams: Tensor[] = []
   private running = false
+  private generationRunning = false
   private _step = 0
   private seqLen: number
   private hyperparams: TrainingHyperparams
@@ -183,6 +184,11 @@ export class Trainer {
     const end0 = validation ? this.encodedText.length : this.valStart
     const rangeLen = end0 - start0 - T - 1
 
+    if (rangeLen <= 0) {
+      const available = end0 - start0
+      throw new Error(`Dataset too small for block size ${T}. Need at least ${T + 2} tokens, have ${available}.`)
+    }
+
     for (let b = 0; b < B; b++) {
       const start = start0 + Math.floor(Math.random() * rangeLen)
       for (let t = 0; t < T; t++) {
@@ -196,19 +202,23 @@ export class Trainer {
   private async computeValLoss(): Promise<number> {
     if (!this._params) return 0
     setGradEnabled(false)
+    let inputTensor: Tensor | undefined
+    let targetTensor: Tensor | undefined
+    let logits: Tensor | undefined
+    let loss: Tensor | undefined
     try {
       const { inputs, targets } = this.sampleBatch(true)
-      const inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
-      const targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
-      const logits = await transformerForward(this._params, inputTensor, this._config)
-      const loss = await crossEntropy(logits, targetTensor)
+      inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
+      targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
+      logits = await transformerForward(this._params, inputTensor, this._config)
+      loss = await crossEntropy(logits, targetTensor)
       const val = (await loss.toArray())[0]
-      inputTensor.dispose()
-      targetTensor.dispose()
-      logits.dispose()
-      loss.dispose()
       return val
     } finally {
+      if (inputTensor) inputTensor.dispose()
+      if (targetTensor) targetTensor.dispose()
+      if (logits) logits.dispose()
+      if (loss) loss.dispose()
       setGradEnabled(true)
     }
   }
@@ -222,71 +232,78 @@ export class Trainer {
 
     while (this.running && this._step < this.hyperparams.maxSteps) {
       const stepStart = performance.now()
+      let inputTensor: Tensor | undefined
+      let targetTensor: Tensor | undefined
+      let logits: Tensor | undefined
+      let loss: Tensor | undefined
 
-      // Sample batch
-      const { inputs, targets } = this.sampleBatch(false)
-      const inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
-      const targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
+      try {
+        // Sample batch
+        const { inputs, targets } = this.sampleBatch(false)
+        inputTensor = await Tensor.fromU32(inputs, [this.hyperparams.batchSize, this.seqLen])
+        targetTensor = await Tensor.fromU32(targets, [this.hyperparams.batchSize * this.seqLen])
 
-      // Forward
-      setGradEnabled(true)
-      const logits = await transformerForward(this._params, inputTensor, this._config)
+        // Forward
+        setGradEnabled(true)
+        logits = await transformerForward(this._params, inputTensor, this._config)
 
-      // Loss
-      const loss = await crossEntropy(logits, targetTensor)
-      const lossVal = (await loss.toArray())[0]
+        // Loss
+        loss = await crossEntropy(logits, targetTensor)
+        const lossVal = (await loss.toArray())[0]
 
-      // Backward
-      await backward(loss)
+        // Backward
+        await backward(loss)
 
-      // Clip gradients (also returns the norm for diagnostics)
-      const gradNorm = await this.clipGradNorm(this.maxGradNorm)
+        // Clip gradients (also returns the norm for diagnostics)
+        const gradNorm = await this.clipGradNorm(this.maxGradNorm)
 
-      // Update learning rate schedule
-      const currentLR = this.getLR(this._step)
-      this.optimizer.setLR(currentLR)
+        // Update learning rate schedule
+        const currentLR = this.getLR(this._step)
+        this.optimizer.setLR(currentLR)
 
-      // Optimizer step
-      await this.optimizer.step()
+        // Optimizer step
+        await this.optimizer.step()
 
-      // Cleanup
-      this.optimizer.zeroGrad()
-      clearTape()
-      inputTensor.dispose()
-      targetTensor.dispose()
-      logits.dispose()
-      loss.dispose()
+        // Cleanup
+        this.optimizer.zeroGrad()
+        clearTape()
 
-      this._step++
-      this._lossHistory.push(lossVal)
+        this._step++
+        this._lossHistory.push(lossVal)
 
-      const elapsed = (performance.now() - stepStart) / 1000
-      const tokensPerSec = (this.hyperparams.batchSize * this.seqLen) / elapsed
+        const elapsed = (performance.now() - stepStart) / 1000
+        const tokensPerSec = (this.hyperparams.batchSize * this.seqLen) / elapsed
 
-      // Diagnostics: log every 10 steps
-      if (this._step % 10 === 0) {
-        console.log(`[train] step=${this._step} loss=${lossVal.toFixed(4)} lr=${currentLR.toExponential(2)} tok/s=${tokensPerSec.toFixed(0)} elapsed=${(elapsed * 1000).toFixed(0)}ms`)
-      }
+        // Diagnostics: log every 10 steps
+        if (this._step % 10 === 0) {
+          console.log(`[train] step=${this._step} loss=${lossVal.toFixed(4)} lr=${currentLR.toExponential(2)} tok/s=${tokensPerSec.toFixed(0)} elapsed=${(elapsed * 1000).toFixed(0)}ms`)
+        }
 
-      const metrics: TrainingMetrics = {
-        step: this._step,
-        loss: lossVal,
-        tokensPerSec,
-        learningRate: currentLR,
-        gradNorm,
-      }
+        const metrics: TrainingMetrics = {
+          step: this._step,
+          loss: lossVal,
+          tokensPerSec,
+          learningRate: currentLR,
+          gradNorm,
+        }
 
-      // Validation loss every 50 steps
-      if (this._step % 50 === 0) {
-        metrics.valLoss = await this.computeValLoss()
-      }
+        // Validation loss every 50 steps
+        if (this._step % 50 === 0) {
+          metrics.valLoss = await this.computeValLoss()
+        }
 
-      onMetrics(metrics)
+        onMetrics(metrics)
 
-      // Generate sample every 1000 steps
-      if (this._step % 1000 === 0) {
-        const sample = await this.generateSample(100)
-        onSample(sample)
+        // Generate sample every 1000 steps
+        if (this._step % 1000 === 0) {
+          const sample = await this.generateSample(100)
+          onSample(sample)
+        }
+      } finally {
+        if (inputTensor) inputTensor.dispose()
+        if (targetTensor) targetTensor.dispose()
+        if (logits) logits.dispose()
+        if (loss) loss.dispose()
       }
 
       // Yield to UI
@@ -297,6 +314,7 @@ export class Trainer {
   async generateSample(maxTokens: number, temperature = 0.8, prompt?: string): Promise<string> {
     if (!this._params || !this._tokenizer) return ''
 
+    this.generationRunning = true
     setGradEnabled(false)
     try {
       // Start with prompt tokens if provided, otherwise a newline seed
@@ -311,45 +329,50 @@ export class Trainer {
         generated = [startIdx]
       }
 
-      for (let i = 0; i < maxTokens; i++) {
-        // Take last blockSize tokens
-        const contextLen = Math.min(generated.length, this._config.blockSize)
-        const context = generated.slice(-contextLen)
-        const inputIds = new Uint32Array(context)
-        const inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
+      for (let i = 0; i < maxTokens && this.generationRunning; i++) {
+        let inputTensor: Tensor | undefined
+        let logits: Tensor | undefined
+        try {
+          // Take last blockSize tokens
+          const contextLen = Math.min(generated.length, this._config.blockSize)
+          const context = generated.slice(-contextLen)
+          const inputIds = new Uint32Array(context)
+          inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
 
-        const logits = await transformerForward(this._params!, inputTensor, this._config)
-        const logitsArr = await logits.toArray()
+          logits = await transformerForward(this._params!, inputTensor, this._config)
+          const logitsArr = await logits.toArray()
 
-        // Get last token logits
-        const lastOffset = (contextLen - 1) * this._config.vocabSize
-        const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
+          // Get last token logits
+          const lastOffset = (contextLen - 1) * this._config.vocabSize
+          const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
 
-        // Temperature sampling
-        const scaledLogits = lastLogits.map((l: number) => l / temperature)
-        const maxLogit = Math.max(...scaledLogits)
-        const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
-        const sumExps = exps.reduce((a: number, b: number) => a + b, 0)
-        const probs = exps.map((e: number) => e / sumExps)
+          // Temperature sampling
+          const scaledLogits = lastLogits.map((l: number) => l / temperature)
+          const maxLogit = Math.max(...scaledLogits)
+          const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
+          const sumExps = exps.reduce((a: number, b: number) => a + b, 0)
+          const probs = exps.map((e: number) => e / sumExps)
 
-        // Sample from distribution
-        let r = Math.random()
-        let nextToken = 0
-        for (let j = 0; j < probs.length; j++) {
-          r -= probs[j]
-          if (r <= 0) {
-            nextToken = j
-            break
+          // Sample from distribution
+          let r = Math.random()
+          let nextToken = probs.length - 1
+          for (let j = 0; j < probs.length; j++) {
+            r -= probs[j]
+            if (r <= 0) {
+              nextToken = j
+              break
+            }
           }
+          generated.push(nextToken)
+        } finally {
+          if (inputTensor) inputTensor.dispose()
+          if (logits) logits.dispose()
         }
-        generated.push(nextToken)
-
-        inputTensor.dispose()
-        logits.dispose()
       }
 
       return this._tokenizer.decode(generated)
     } finally {
+      this.generationRunning = false
       setGradEnabled(true)
     }
   }
@@ -362,6 +385,7 @@ export class Trainer {
   ): Promise<string> {
     if (!this._params || !this._tokenizer) return ''
 
+    this.generationRunning = true
     setGradEnabled(false)
     try {
       let generated: number[]
@@ -375,40 +399,48 @@ export class Trainer {
         generated = [startIdx]
       }
 
-      for (let i = 0; i < maxTokens; i++) {
-        const contextLen = Math.min(generated.length, this._config.blockSize)
-        const context = generated.slice(-contextLen)
-        const inputIds = new Uint32Array(context)
-        const inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
+      let runningText = this._tokenizer.decode(generated)
+      for (let i = 0; i < maxTokens && this.generationRunning; i++) {
+        let inputTensor: Tensor | undefined
+        let logits: Tensor | undefined
+        try {
+          const contextLen = Math.min(generated.length, this._config.blockSize)
+          const context = generated.slice(-contextLen)
+          const inputIds = new Uint32Array(context)
+          inputTensor = await Tensor.fromU32(inputIds, [1, contextLen])
 
-        const logits = await transformerForward(this._params!, inputTensor, this._config)
-        const logitsArr = await logits.toArray()
+          logits = await transformerForward(this._params!, inputTensor, this._config)
+          const logitsArr = await logits.toArray()
 
-        const lastOffset = (contextLen - 1) * this._config.vocabSize
-        const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
+          const lastOffset = (contextLen - 1) * this._config.vocabSize
+          const lastLogits = logitsArr.slice(lastOffset, lastOffset + this._config.vocabSize)
 
-        const scaledLogits = lastLogits.map((l: number) => l / temperature)
-        const maxLogit = Math.max(...scaledLogits)
-        const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
-        const sumExps = exps.reduce((a: number, b: number) => a + b, 0)
-        const probs = exps.map((e: number) => e / sumExps)
+          const scaledLogits = lastLogits.map((l: number) => l / temperature)
+          const maxLogit = Math.max(...scaledLogits)
+          const exps = scaledLogits.map((l: number) => Math.exp(l - maxLogit))
+          const sumExps = exps.reduce((a: number, b: number) => a + b, 0)
+          const probs = exps.map((e: number) => e / sumExps)
 
-        let r = Math.random()
-        let nextToken = 0
-        for (let j = 0; j < probs.length; j++) {
-          r -= probs[j]
-          if (r <= 0) {
-            nextToken = j
-            break
+          let r = Math.random()
+          let nextToken = probs.length - 1
+          for (let j = 0; j < probs.length; j++) {
+            r -= probs[j]
+            if (r <= 0) {
+              nextToken = j
+              break
+            }
           }
+          generated.push(nextToken)
+
+          // Decode only the new token and append to avoid O(n^2) full-array decode
+          runningText += this._tokenizer!.decode([generated[generated.length - 1]])
+
+          // Emit partial result
+          onToken(runningText)
+        } finally {
+          if (inputTensor) inputTensor.dispose()
+          if (logits) logits.dispose()
         }
-        generated.push(nextToken)
-
-        inputTensor.dispose()
-        logits.dispose()
-
-        // Emit partial result
-        onToken(this._tokenizer!.decode(generated))
 
         // Yield to UI every few tokens
         if (i % 3 === 0) {
@@ -416,13 +448,18 @@ export class Trainer {
         }
       }
 
-      return this._tokenizer.decode(generated)
+      return runningText
     } finally {
+      this.generationRunning = false
       setGradEnabled(true)
     }
   }
 
   stop(): void {
     this.running = false
+  }
+
+  stopGeneration(): void {
+    this.generationRunning = false
   }
 }

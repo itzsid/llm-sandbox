@@ -47,6 +47,7 @@ function App() {
   const trainingSectionRef = useRef<HTMLDivElement>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trainerRef = useRef<Trainer | null>(null)
+  const [trainer, setTrainerState] = useState<Trainer | null>(null)
   const trainingControlRef = useRef<TrainingControl | null>(null)
   const [hyperparams, setHyperparams] = useState<TrainingHyperparams>(DEFAULT_HYPERPARAMS)
 
@@ -57,9 +58,12 @@ function App() {
     // Check URL hash for shared config
     const hashConfig = decodeConfigFromHash(window.location.hash)
     if (hashConfig) {
-      setModelConfig(hashConfig)
+      const errors = validateConfig(hashConfig)
       setConfigText(configToText(hashConfig))
-      setConfigErrors(validateConfig(hashConfig))
+      setConfigErrors(errors)
+      if (errors.length === 0) {
+        setModelConfig(hashConfig)
+      }
       // Clear the hash
       history.replaceState(null, '', window.location.pathname)
       return
@@ -138,6 +142,11 @@ function App() {
     setTrainingStatus(status)
   }, [])
 
+  const handleTrainerChange = useCallback((t: Trainer | null) => {
+    trainerRef.current = t
+    setTrainerState(t)
+  }, [])
+
   // Share config via URL hash
   const handleShare = useCallback(() => {
     const hash = encodeConfigToHash(modelConfig)
@@ -204,8 +213,11 @@ function App() {
           <DatasetPanel selected={selectedDataset} onSelect={setSelectedDataset} />
 
           {/* Code / Visual / Form sub-tabs */}
-          <div className="sub-tab-bar">
+          <div className="sub-tab-bar" role="tablist" aria-label="Configuration editor">
             <button
+              role="tab"
+              aria-selected={configSubTab === 'code'}
+              aria-controls="config-panel-code"
               className={`sub-tab-btn ${configSubTab === 'code' ? 'sub-tab-active' : ''}`}
               onClick={() => setConfigSubTab('code')}
               disabled={trainingActive}
@@ -213,6 +225,9 @@ function App() {
               Code
             </button>
             <button
+              role="tab"
+              aria-selected={configSubTab === 'visual'}
+              aria-controls="config-panel-visual"
               className={`sub-tab-btn ${configSubTab === 'visual' ? 'sub-tab-active' : ''}`}
               onClick={() => setConfigSubTab('visual')}
               disabled={trainingActive}
@@ -220,6 +235,9 @@ function App() {
               Visual
             </button>
             <button
+              role="tab"
+              aria-selected={configSubTab === 'form'}
+              aria-controls="config-panel-form"
               className={`sub-tab-btn ${configSubTab === 'form' ? 'sub-tab-active' : ''}`}
               onClick={() => setConfigSubTab('form')}
               disabled={trainingActive}
@@ -282,6 +300,7 @@ function App() {
             hyperparams={hyperparams}
             onTrainingStateChange={handleTrainingStateChange}
             onTrainingStatusChange={handleTrainingStatusChange}
+            onTrainerChange={handleTrainerChange}
             trainerRef={trainerRef}
             trainingControlRef={trainingControlRef}
             user={user}
@@ -290,7 +309,7 @@ function App() {
 
         {/* === Playground Section === */}
         <PlaygroundPanel
-          trainer={trainerRef.current}
+          trainer={trainer}
           isTraining={trainingActive}
         />
       </main>

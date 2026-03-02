@@ -49,12 +49,13 @@ interface TrainingPanelProps {
   hyperparams: TrainingHyperparams
   onTrainingStateChange: (active: boolean) => void
   onTrainingStatusChange: (status: TrainingStatus) => void
+  onTrainerChange?: (trainer: Trainer | null) => void
   trainerRef?: React.MutableRefObject<Trainer | null>
   trainingControlRef?: React.MutableRefObject<TrainingControl | null>
   user: User | null
 }
 
-export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateChange, onTrainingStatusChange, trainerRef: externalTrainerRef, trainingControlRef, user }: TrainingPanelProps) {
+export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateChange, onTrainingStatusChange, onTrainerChange, trainerRef: externalTrainerRef, trainingControlRef, user }: TrainingPanelProps) {
   const [status, setStatus] = useState<TrainingStatus>('idle')
   const [metrics, setMetrics] = useState<TrainingMetrics | null>(null)
   const [lossHistory, setLossHistory] = useState<number[]>([])
@@ -80,13 +81,25 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
   // Counter to trigger re-render when zoomed out
   const [fullHistoryLen, setFullHistoryLen] = useState(0)
 
-  // Sync trainer to external ref
+  // Sync trainer to external ref and notify parent
   const setTrainer = useCallback((trainer: Trainer | null) => {
     trainerRef.current = trainer
     if (externalTrainerRef) externalTrainerRef.current = trainer
-  }, [externalTrainerRef])
+    onTrainerChange?.(trainer)
+  }, [externalTrainerRef, onTrainerChange])
+
+  const formatLoss = useCallback((v: number) => v.toFixed(4), [])
+  const formatTokSec = useCallback((v: number) => v.toFixed(0), [])
+  const formatGradNorm = useCallback((v: number) => v.toFixed(2), [])
 
   const isTraining = status === 'training'
+
+  // Cleanup: stop training and dispose GPU buffers on unmount
+  useEffect(() => {
+    return () => {
+      trainerRef.current?.stop()
+    }
+  }, [])
 
   useEffect(() => {
     onTrainingStateChange(isTraining)
@@ -110,13 +123,13 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
   const onMetrics = useCallback((m: TrainingMetrics) => {
     setMetrics(m)
     // Rolling window for default (zoomed-in) view
-    setLossHistory((prev) => [...prev.slice(-199), m.loss])
-    setTokensPerSecHistory((prev) => [...prev.slice(-199), m.tokensPerSec])
+    setLossHistory((prev) => [...prev.slice(-499), m.loss])
+    setTokensPerSecHistory((prev) => [...prev.slice(-499), m.tokensPerSec])
     if (m.valLoss !== undefined) {
       setValLossHistory((prev) => [...prev.slice(-49), m.valLoss!])
     }
     if (m.gradNorm !== undefined) {
-      setGradNormHistory((prev) => [...prev.slice(-199), m.gradNorm!])
+      setGradNormHistory((prev) => [...prev.slice(-499), m.gradNorm!])
     }
     // Append to full history refs (cheap, no re-render)
     fullLoss.current.push(m.loss)
@@ -178,7 +191,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
       setError(e instanceof Error ? e.message : String(e))
       setStatus('idle')
     }
-  }, [config, dataset, hyperparams, onMetrics, onSample])
+  }, [config, dataset, hyperparams, onMetrics, onSample, setTrainer])
 
   const handleStop = useCallback(() => {
     trainerRef.current?.stop()
@@ -229,7 +242,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         checkpoint.hyperparams,
       )
 
-      setLossHistory(checkpoint.lossHistory.slice(-200))
+      setLossHistory(checkpoint.lossHistory.slice(-500))
       fullLoss.current = [...checkpoint.lossHistory]
       setFullHistoryLen(fullLoss.current.length)
 
@@ -310,6 +323,12 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
         </div>
       )}
 
+      {status === 'initializing' && (
+        <div style={{ padding: '1rem', color: 'var(--text-2)', textAlign: 'center' }}>
+          Initializing model and tokenizer...
+        </div>
+      )}
+
       {error && <div className="error-msg">{error}</div>}
 
       {lossHistory.length > 1 && (
@@ -327,7 +346,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
               fontFamily: 'var(--font-mono)',
             }}
           >
-            {zoomedOut ? `Last 200 steps` : `All ${fullLoss.current.length} steps`}
+            {zoomedOut ? `Last 500 steps` : `All ${fullLoss.current.length} steps`}
           </button>
         </div>
       )}
@@ -338,7 +357,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
           label="Train Loss"
           color="#22C55E"
           height={160}
-          formatValue={(v) => v.toFixed(2)}
+          formatValue={formatLoss}
           secondaryData={dsValLoss.length > 1 ? dsValLoss : undefined}
           secondaryColor="#60A5FA"
           secondaryLabel="Val Loss"
@@ -351,7 +370,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
           label="Tokens/sec"
           color="#F59E0B"
           height={100}
-          formatValue={(v) => v.toFixed(0)}
+          formatValue={formatTokSec}
         />
       )}
 
@@ -361,7 +380,7 @@ export function TrainingPanel({ config, dataset, hyperparams, onTrainingStateCha
           label="Gradient Norm"
           color="#A78BFA"
           height={100}
-          formatValue={(v) => v.toFixed(2)}
+          formatValue={formatGradNorm}
         />
       )}
 

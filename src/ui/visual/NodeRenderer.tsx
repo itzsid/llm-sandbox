@@ -12,6 +12,7 @@ interface NodeRendererProps {
   editValues?: Record<string, string | number>
   onEditChange?: (field: string, value: string) => void
   onEditCommit?: () => void
+  onEditCancel?: () => void
 }
 
 // Parse hex color to rgba with alpha
@@ -32,6 +33,7 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
   editValues,
   onEditChange,
   onEditCommit,
+  onEditCancel,
 }) => {
   const [hovered, setHovered] = useState(false)
 
@@ -189,7 +191,10 @@ export const NodeRenderer: React.FC<NodeRendererProps> = ({
                 type="number"
                 value={val}
                 onChange={(e) => onEditChange(key, e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onEditCommit() }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onEditCommit()
+                  if (e.key === 'Escape') onEditCancel?.()
+                }}
                 style={{
                   width: '60px',
                   padding: '2px 4px',

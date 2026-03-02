@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 
 export interface MetricsChartProps {
   data: number[]
@@ -23,14 +23,37 @@ export function MetricsChart({
 }: MetricsChartProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
+  // Redraw counter for ResizeObserver triggers
+  const [, setRedrawCount] = useState(0)
+
+  // ResizeObserver to re-draw chart when container resizes
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || data.length < 2) return
+    if (!canvas) return
+    const observer = new ResizeObserver(() => {
+      setRedrawCount(c => c + 1)
+    })
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || data.length < 2) {
+      if (canvas) {
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        }
+      }
+      return
+    }
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     const dpr = window.devicePixelRatio || 1
     const rect = canvas.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
     canvas.width = rect.width * dpr
     canvas.height = rect.height * dpr
     ctx.scale(dpr, dpr)

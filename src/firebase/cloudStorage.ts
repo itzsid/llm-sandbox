@@ -23,7 +23,7 @@ export async function saveCloudCheckpoint(
   checkpoint: Checkpoint,
 ): Promise<void> {
   const app = await getFirebaseApp()
-  const { getFirestore, doc, setDoc, collection, writeBatch, Bytes } = await import('firebase/firestore')
+  const { getFirestore, doc, setDoc, collection, getDocs, writeBatch, Bytes } = await import('firebase/firestore')
 
   const blob = exportCheckpoint(checkpoint)
   const buffer = await blob.arrayBuffer()
@@ -31,8 +31,32 @@ export async function saveCloudCheckpoint(
   const totalChunks = Math.ceil(bytes.length / CHUNK_SIZE)
 
   const db = getFirestore(app)
+  const chunksCol = collection(db, 'users', uid, 'checkpoints', checkpoint.name, 'chunks')
 
-  // Write metadata doc
+  // Delete any existing chunks (handles overwrite case)
+  const existingChunks = await getDocs(chunksCol)
+  if (existingChunks.size > 0) {
+    const docsToDelete = existingChunks.docs
+    for (let i = 0; i < docsToDelete.length; i += 500) {
+      const batch = writeBatch(db)
+      const slice = docsToDelete.slice(i, i + 500)
+      slice.forEach((d) => batch.delete(d.ref))
+      await batch.commit()
+    }
+  }
+
+  // Write data chunks first (before metadata)
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE
+    const end = Math.min(start + CHUNK_SIZE, bytes.length)
+    const chunk = bytes.slice(start, end)
+    const chunkDoc = doc(chunksCol, String(i))
+    const batch = writeBatch(db)
+    batch.set(chunkDoc, { data: Bytes.fromUint8Array(chunk), index: i })
+    await batch.commit()
+  }
+
+  // Write metadata doc last — this is the "commit point"
   const metaDoc = doc(db, 'users', uid, 'checkpoints', checkpoint.name)
   await setDoc(metaDoc, {
     name: checkpoint.name,
@@ -43,18 +67,6 @@ export async function saveCloudCheckpoint(
     totalChunks,
     configSummary: configSummary(checkpoint.config),
   })
-
-  // Write data chunks in batches (Firestore batch limit = 500 ops)
-  const chunksCol = collection(db, 'users', uid, 'checkpoints', checkpoint.name, 'chunks')
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE
-    const end = Math.min(start + CHUNK_SIZE, bytes.length)
-    const chunk = bytes.slice(start, end)
-    const chunkDoc = doc(chunksCol, String(i))
-    const batch = writeBatch(db)
-    batch.set(chunkDoc, { data: Bytes.fromUint8Array(chunk), index: i })
-    await batch.commit()
-  }
 }
 
 export async function listCloudCheckpoints(

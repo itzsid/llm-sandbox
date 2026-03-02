@@ -29,6 +29,11 @@ export function DatasetPanel({ selected, onSelect }: DatasetPanelProps) {
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File too large. Maximum size is 10MB for in-browser training.')
+      return
+    }
     setError(null)
     try {
       const text = await file.text()

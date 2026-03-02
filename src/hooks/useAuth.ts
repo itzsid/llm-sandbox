@@ -10,18 +10,26 @@ export function useAuth(): { user: User | null; loading: boolean } {
   useEffect(() => {
     if (!isFirebaseConfigured()) return
 
-    let unsubscribe: (() => void) | null = null
+    let cancelled = false
+    let unsubscribe: (() => void) | undefined
 
     subscribeAuthState((u) => {
-      setUser(u)
-      setLoading(false)
+      if (!cancelled) {
+        setUser(u)
+        setLoading(false)
+      }
     }).then((unsub) => {
-      unsubscribe = unsub
+      if (cancelled) {
+        unsub() // cleanup already ran, unsubscribe immediately
+      } else {
+        unsubscribe = unsub
+      }
     }).catch(() => {
-      setLoading(false)
+      if (!cancelled) setLoading(false)
     })
 
     return () => {
+      cancelled = true
       unsubscribe?.()
     }
   }, [])

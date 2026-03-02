@@ -211,7 +211,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.9rem',
     fontFamily: 'var(--font-mono)',
     whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
+    overflowWrap: 'break-word',
     maxHeight: '300px',
     overflowY: 'auto',
     margin: 0,

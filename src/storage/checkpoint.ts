@@ -32,6 +32,7 @@ function openDB(): Promise<IDBDatabase> {
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
+    request.onblocked = () => reject(new Error('IndexedDB open blocked — close other tabs using this app'))
   })
 }
 
@@ -96,10 +97,10 @@ export async function saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
-    const request = store.put(toStorable(checkpoint))
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
-    tx.oncomplete = () => db.close()
+    store.put(toStorable(checkpoint))
+    tx.oncomplete = () => { db.close(); resolve() }
+    tx.onerror = () => { db.close(); reject(tx.error) }
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Transaction aborted')) }
   })
 }
 
@@ -109,15 +110,18 @@ export async function loadCheckpoint(name: string): Promise<Checkpoint> {
     const tx = db.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
     const request = store.get(name)
-    request.onsuccess = () => {
-      if (!request.result) {
+    let result: any = undefined
+    request.onsuccess = () => { result = request.result }
+    tx.oncomplete = () => {
+      db.close()
+      if (!result) {
         reject(new Error(`Checkpoint "${name}" not found`))
       } else {
-        resolve(fromStorable(request.result))
+        resolve(fromStorable(result))
       }
     }
-    request.onerror = () => reject(request.error)
-    tx.oncomplete = () => db.close()
+    tx.onerror = () => { db.close(); reject(tx.error) }
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Transaction aborted')) }
   })
 }
 
@@ -127,8 +131,11 @@ export async function listCheckpoints(): Promise<{ name: string; step: number; s
     const tx = db.transaction(STORE_NAME, 'readonly')
     const store = tx.objectStore(STORE_NAME)
     const request = store.getAll()
-    request.onsuccess = () => {
-      const results = (request.result || []).map((item: any) => ({
+    let rawResults: any[] = []
+    request.onsuccess = () => { rawResults = request.result || [] }
+    tx.oncomplete = () => {
+      db.close()
+      const results = rawResults.map((item: any) => ({
         name: item.name as string,
         step: item.step as number,
         savedAt: item.savedAt as number,
@@ -138,8 +145,8 @@ export async function listCheckpoints(): Promise<{ name: string; step: number; s
       results.sort((a, b) => b.savedAt - a.savedAt)
       resolve(results)
     }
-    request.onerror = () => reject(request.error)
-    tx.oncomplete = () => db.close()
+    tx.onerror = () => { db.close(); reject(tx.error) }
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Transaction aborted')) }
   })
 }
 
@@ -148,10 +155,10 @@ export async function deleteCheckpoint(name: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
-    const request = store.delete(name)
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
-    tx.oncomplete = () => db.close()
+    store.delete(name)
+    tx.oncomplete = () => { db.close(); resolve() }
+    tx.onerror = () => { db.close(); reject(tx.error) }
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Transaction aborted')) }
   })
 }
 

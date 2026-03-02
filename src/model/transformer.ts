@@ -76,11 +76,18 @@ export async function initTransformer(config: TransformerConfig): Promise<Transf
 
   const lnFinalGamma = await Tensor.ones([dModel], { requiresGrad: true })
   const lnFinalBeta = await Tensor.zeros([dModel], { requiresGrad: true })
-  const lmHead = await Tensor.create(
-    normalInit([dModel, vocabSize]),
-    [dModel, vocabSize],
-    { requiresGrad: true },
-  )
+
+  let lmHead: Tensor
+  if (config.tieWeights) {
+    // Share the token embedding weights for the LM head
+    lmHead = tokenEmbed
+  } else {
+    lmHead = await Tensor.create(
+      normalInit([dModel, vocabSize]),
+      [dModel, vocabSize],
+      { requiresGrad: true },
+    )
+  }
 
   return { tokenEmbed, posEmbed, layers, lnFinalGamma, lnFinalBeta, lmHead }
 }
@@ -256,8 +263,11 @@ export function getAllParams(params: TransformerParams): Tensor[] {
     params.posEmbed,
     params.lnFinalGamma,
     params.lnFinalBeta,
-    params.lmHead,
   ]
+  // Only add lmHead if it's a separate tensor (not tied to tokenEmbed)
+  if (params.lmHead !== params.tokenEmbed) {
+    all.push(params.lmHead)
+  }
   for (const layer of params.layers) {
     all.push(
       layer.lnAttnGamma, layer.lnAttnBeta,
@@ -275,8 +285,11 @@ export function getParamGroups(params: TransformerParams, _weightDecay: number):
   const decay: Tensor[] = [
     params.tokenEmbed,
     params.posEmbed,
-    params.lmHead,
   ]
+  // Only add lmHead if it's a separate tensor (not tied to tokenEmbed)
+  if (params.lmHead !== params.tokenEmbed) {
+    decay.push(params.lmHead)
+  }
   // 1D params (biases, LayerNorm gamma/beta) get zero weight decay
   const noDecay: Tensor[] = [
     params.lnFinalGamma,

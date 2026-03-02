@@ -71,6 +71,50 @@ export function validateConfig(config: ModelConfig): ConfigError[] {
     })
   }
 
+  // All layers must have the same nHeads
+  if (config.layers.length > 1) {
+    const nHeads0 = config.layers[0].nHeads
+    for (let i = 1; i < config.layers.length; i++) {
+      if (config.layers[i].nHeads !== nHeads0) {
+        errors.push({
+          path: 'layers',
+          message: `All layers must have the same nHeads (layer 0 has ${nHeads0}, layer ${i} has ${config.layers[i].nHeads})`,
+        })
+        break
+      }
+    }
+  }
+
+  // All layers must have the same dFF
+  if (config.layers.length > 1) {
+    const dFF0 = config.layers[0].dFF
+    for (let i = 1; i < config.layers.length; i++) {
+      if (config.layers[i].dFF !== dFF0) {
+        errors.push({
+          path: 'layers',
+          message: `All layers must have the same dFF (layer 0 has ${dFF0}, layer ${i} has ${config.layers[i].dFF})`,
+        })
+        break
+      }
+    }
+  }
+
+  // Warn about GPT-2 vocab with small models
+  if (config.vocabSize === 'auto' && config.tokenizerType === 'bpe-gpt2' && config.layers.length > 0) {
+    const dModel = config.layers[0].dModel
+    if (dModel <= 128) {
+      const embeddingParams = 50257 * dModel
+      const totalEstimate = estimateParamCount(config)
+      if (embeddingParams > totalEstimate * 0.5) {
+        errors.push({
+          path: 'tokenizerType',
+          message: `GPT-2 tokenizer (50257 vocab) creates a ${(embeddingParams / 1e6).toFixed(1)}M param embedding — over half your ${(totalEstimate / 1e6).toFixed(1)}M model`,
+          suggestion: 'Consider using "char" tokenizer or setting a smaller explicit vocabSize for tiny models',
+        })
+      }
+    }
+  }
+
   // Per-layer validation
   config.layers.forEach((layer, i) => {
     const prefix = `layers[${i}]`
@@ -208,6 +252,7 @@ export function toLegacyConfig(config: ModelConfig, actualVocabSize?: number): T
     nHeads: layer.nHeads,
     dModel: layer.dModel,
     dFF: layer.dFF,
+    tieWeights: config.tieWeights,
   }
 }
 

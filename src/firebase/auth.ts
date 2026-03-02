@@ -5,10 +5,21 @@ export type { User } from 'firebase/auth'
 
 export async function signInWithGoogle(): Promise<User> {
   const app = await getFirebaseApp()
-  const { getAuth, signInWithPopup, GoogleAuthProvider } = await import('firebase/auth')
+  const { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider } = await import('firebase/auth')
   const auth = getAuth(app)
-  const result = await signInWithPopup(auth, new GoogleAuthProvider())
-  return result.user
+  const provider = new GoogleAuthProvider()
+  try {
+    const result = await signInWithPopup(auth, provider)
+    return result.user
+  } catch (err: unknown) {
+    // Fallback to redirect if popup is blocked
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'auth/popup-blocked') {
+      await signInWithRedirect(auth, provider)
+      // After redirect, the auth state listener in useAuth will pick up the user
+      throw new Error('Redirecting to sign-in page...')
+    }
+    throw err
+  }
 }
 
 export async function logOut(): Promise<void> {

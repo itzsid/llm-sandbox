@@ -587,7 +587,7 @@
   font-size: 0.85rem;
   color: var(--text-2);
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: break-word;
   max-height: 200px;
   overflow-y: auto;
   margin: 0;

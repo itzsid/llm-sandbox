@@ -126,9 +126,21 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Recompute graph when config changes externally
+  // Recompute graph when config changes externally, preserving node positions
   useEffect(() => {
-    setGraph(configToGraph(config))
+    setGraph(prev => {
+      const newGraph = configToGraph(config)
+      if (prev.nodes.length === 0) return newGraph // initial render
+      // Preserve positions from previous graph for existing nodes
+      const posMap = new Map(prev.nodes.map(n => [n.id, { x: n.x, y: n.y }]))
+      return {
+        nodes: newGraph.nodes.map(n => {
+          const pos = posMap.get(n.id)
+          return pos ? { ...n, x: pos.x, y: pos.y } : n
+        }),
+        edges: newGraph.edges,
+      }
+    })
   }, [config])
 
   // Selected node object
@@ -165,8 +177,9 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
     (e: React.MouseEvent) => {
       // Only trigger pan on left click on the background
       if (e.button !== 0) return
-      // Deselect any node
+      // Deselect any node and dismiss inline editing
       setSelectedNodeId(null)
+      setEditingNodeId(null)
       setDragging({
         type: 'pan',
         startX: e.clientX,
@@ -260,6 +273,10 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
     onChange({ ...config, layers: newLayers })
     setEditingNodeId(null)
   }, [editingNodeId, editValues, graph, config, onChange])
+
+  const handleEditCancel = useCallback(() => {
+    setEditingNodeId(null)
+  }, [])
 
   // --- Add / Remove layers ---
   const handleAddLayer = useCallback(() => {
@@ -374,6 +391,7 @@ export const NodeEditor: React.FC<NodeEditorProps> = ({ config, onChange }) => {
                   editValues={editingNodeId === node.id ? editValues : undefined}
                   onEditChange={handleEditChange}
                   onEditCommit={handleEditCommit}
+                  onEditCancel={handleEditCancel}
                 />
               ))}
             </g>
