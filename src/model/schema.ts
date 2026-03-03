@@ -314,7 +314,7 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(2)
       .fill(null)
       .map(() => makeLayerConfig(64, 4, 256)),
-    tieWeights: true,
+    tieWeights: false,
     tokenizerType: 'char',
   },
   nano: {
@@ -324,7 +324,7 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(4)
       .fill(null)
       .map(() => makeLayerConfig(128, 4, 512)),
-    tieWeights: true,
+    tieWeights: false,
     tokenizerType: 'char',
   },
   micro: {
@@ -334,7 +334,7 @@ export const PRESETS: Record<string, ModelConfig> = {
     layers: Array(6)
       .fill(null)
       .map(() => makeLayerConfig(256, 8, 1024)),
-    tieWeights: true,
+    tieWeights: false,
     tokenizerType: 'char',
   },
 }

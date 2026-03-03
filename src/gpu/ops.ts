@@ -549,6 +549,21 @@ export async function transpose(input: Tensor): Promise<Tensor> {
   })
   await device.queue.onSubmittedWorkDone()
   uniform.destroy()
+
+  if (isGradEnabled() && input.requiresGrad) {
+    recordOp(result, [input], async (grad) => {
+      // Backward of transpose is transpose
+      const dInput = await transpose(grad)
+      if (input.grad) {
+        const newGrad = await add(input.grad, dInput)
+        input.grad.dispose()
+        dInput.dispose()
+        input.grad = newGrad
+      } else {
+        input.grad = dInput
+      }
+    })
+  }
   return result
 }
 
